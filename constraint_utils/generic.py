@@ -1,5 +1,6 @@
 from gnomad_hail import *
 from gnomad_hail.utils.plotting import *
+import statsmodels.formula.api as smf
 
 
 def reverse_complement_bases(bases: hl.expr.StringExpression) -> hl.expr.StringExpression:
@@ -272,3 +273,26 @@ def remove_coverage_outliers(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.Mat
     """
     criteria = (t.coverage.genomes.mean >= 15) & (t.coverage.genomes.mean <= 60)
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
+
+
+# Misc
+def maps(ht: hl.Table, mutation_ht: hl.Table, vep_root: str = 'vep') -> hl.Table:
+    ht = ht.annotate(csq=ht[vep_root]['most_severe_consequence'])
+    ht = count_variants(ht, count_singletons=True, additional_grouping=('csq', ))
+    ht = ht.annotate(mu=mutation_ht[ht.key].mu_snp,
+                     ps=ht.singleton_count / ht.variant_count)
+    syn_ps_pd = ht.filter(ht.csq == 'synonymous_variant').to_pandas()
+
+    lm = smf.ols(formula='ps ~ mu', data=syn_ps_pd).fit()
+    slope = lm.params['mu']
+    intercept = lm.params['Intercept']
+    ht = ht.annotate(expected_singletons=(ht.mu * slope + intercept) * ht.variant_count)
+
+    agg_ht = (ht.group_by('csq')
+              .aggregate(singleton_count=hl.agg.sum(ht.singleton_count),
+                         expected_singletons=hl.agg.sum(ht.expected_singletons),
+                         variant_count=hl.agg.sum(ht.variant_count)))
+    agg_ht = agg_ht.annotate(ps=agg_ht.singleton_count / agg_ht.variant_count,
+                             maps=(agg_ht.singleton_count - agg_ht.expected_singletons) / agg_ht.variant_count)
+    agg_ht = agg_ht.annotate(sem_ps=(agg_ht.ps * (1 - agg_ht.ps) / agg_ht.variant_count) ** 0.5)
+    return agg_ht

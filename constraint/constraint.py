@@ -34,11 +34,8 @@ def main(args):
 
     mutation_ht = hl.read_table(mutation_rate_ht_path).select('mu_snp')
 
-    # pass_autosomes_exome_ht = filter_to_pass(autosomes_exome_ht)  # TODO
-    rare_autosomes_exome_ht = filter_by_frequency(autosomes_exome_ht, 0.001, direction='below')
-
     if args.get_mu_coverage:
-        coverage_ht = get_proportion_observed_by_coverage(rare_autosomes_exome_ht, autosomes_context_ht, mutation_ht, True)
+        coverage_ht = get_proportion_observed_by_coverage(autosomes_exome_ht, autosomes_context_ht, mutation_ht, True)
         annotate_variant_types(coverage_ht).write(po_coverage_ht_path, overwrite=args.overwrite)
         send_message(args.slack_channel, 'Coverage data calculated!')
 

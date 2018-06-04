@@ -1,7 +1,6 @@
 __author__ = 'konradk'
 
 from .generic import *
-import statsmodels.formula.api as smf
 import pickle
 
 root = 'gs://gnomad-resources/constraint/hail-0.2'
@@ -154,7 +153,6 @@ def prepare_ht(ht, trimer: bool = False):
                               # hl.or_missing(ht.cpg, hl.int(ht.methylation.MEAN * 10)),
                               csq=ht.vep.most_severe_consequence,
                               exome_coverage=hl.int(ht.coverage.exomes.mean * 10))
-
     return ht
 
 
@@ -243,15 +241,27 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
                        mu_snp_afr=ht.downsamplings_mu_afr[index_1kg])
 
 
-def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
-                                        recompute_possible: bool = False) -> hl.Table:
+def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
+                                        recompute_possible: bool = False, remove_common: bool = True) -> hl.Table:
 
     context_ht = fast_filter_vep(context_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage')
     context_ht = context_ht.filter_rows(hl.is_defined(context_ht.exome_coverage))
 
-    exome_ht = fast_filter_vep(exome_ht).select('context', 'ref', 'alt', 'methylation_level', 'exome_coverage', 'freq')
+    # pass_autosomes_exome_ht = filter_to_pass(autosomes_exome_ht)  # TODO
+    exome_ht = fast_filter_vep(exome_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage', 'freq')
 
     grouping = ('exome_coverage',)
+    af_cutoff = 0.001
+
+    if remove_common:
+        exome_freq = exome_ht[context_ht.row_key, :].freq
+        context_ht = context_ht.filter_rows(
+            hl.is_missing(exome_freq) |
+            hl.any(lambda f: (f.AF[1] <= af_cutoff) & (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
+                   exome_freq)
+        ).rows()
+
+    exome_ht = filter_by_frequency(exome_ht, af_cutoff, direction='below').rows()
 
     possible_file = 'gs://konradk/tmp/possible.pckl'
     if recompute_possible:
@@ -263,7 +273,6 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Matri
         possible_variants = pickle.load(f)
 
     variant_counts_dtype = count_variants(context_ht.rows(), additional_grouping=grouping, return_type_only=True)
-    pprint(variant_counts_dtype)
     ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=('global',))
     ht = ht.annotate(possible_variants=hl.literal(possible_variants.variant_count, dtype=variant_counts_dtype)[ht.key],
                      mu_snp=mutation_ht[hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt, methylation_level=ht.methylation_level)].mu_snp)
@@ -292,29 +301,6 @@ def build_plateau_models(ht: hl.Table) -> dict:
         lm = smf.ols(formula='high_coverage_proportion_observed ~ mutation_rate', data=high_coverage_pd).fit()
         output[variant_type_model] = dict(lm.params)
     return output
-
-
-# Misc
-def maps(ht: hl.Table, mutation_ht: hl.Table, vep_root: str = 'vep') -> hl.Table:
-    ht = ht.annotate(csq=ht[vep_root]['most_severe_consequence'])
-    ht = count_variants(ht, count_singletons=True, additional_grouping=('csq', ))
-    ht = ht.annotate(mu=mutation_ht[ht.key].mu_snp,
-                     ps=ht.singleton_count / ht.variant_count)
-    syn_ps_pd = ht.filter(ht.csq == 'synonymous_variant').to_pandas()
-
-    lm = smf.ols(formula='ps ~ mu', data=syn_ps_pd).fit()
-    slope = lm.params['mu']
-    intercept = lm.params['Intercept']
-    ht = ht.annotate(expected_singletons=(ht.mu * slope + intercept) * ht.variant_count)
-
-    agg_ht = (ht.group_by('csq')
-              .aggregate(singleton_count=hl.agg.sum(ht.singleton_count),
-                         expected_singletons=hl.agg.sum(ht.expected_singletons),
-                         variant_count=hl.agg.sum(ht.variant_count)))
-    agg_ht = agg_ht.annotate(ps=agg_ht.singleton_count / agg_ht.variant_count,
-                             maps=(agg_ht.singleton_count - agg_ht.expected_singletons) / agg_ht.variant_count)
-    agg_ht = agg_ht.annotate(sem_ps=(agg_ht.ps * (1 - agg_ht.ps) / agg_ht.variant_count) ** 0.5)
-    return agg_ht
 
 
 # Plotting
