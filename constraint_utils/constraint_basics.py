@@ -305,12 +305,12 @@ def maps(ht: hl.Table, mutation_ht: hl.Table, vep_root: str = 'vep') -> hl.Table
     lm = smf.ols(formula='ps ~ mu', data=syn_ps_pd).fit()
     slope = lm.params['mu']
     intercept = lm.params['Intercept']
-    ht = ht.annotate(expected_singletons=(ht.mu * slope + intercept) * ht.n_variants)
+    ht = ht.annotate(expected_singletons=(ht.mu * slope + intercept) * ht.variant_count)
 
     agg_ht = (ht.group_by('csq')
-              .aggregate(n_singletons=hl.agg.sum(ht.singleton_count),
+              .aggregate(singleton_count=hl.agg.sum(ht.singleton_count),
                          expected_singletons=hl.agg.sum(ht.expected_singletons),
-                         n_variants=hl.agg.sum(ht.variant_count)))
+                         variant_count=hl.agg.sum(ht.variant_count)))
     agg_ht = agg_ht.annotate(ps=agg_ht.singleton_count / agg_ht.variant_count,
                              maps=(agg_ht.singleton_count - agg_ht.expected_singletons) / agg_ht.variant_count)
     agg_ht = agg_ht.annotate(sem_ps=(agg_ht.ps * (1 - agg_ht.ps) / agg_ht.variant_count) ** 0.5)
