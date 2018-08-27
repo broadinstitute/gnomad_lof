@@ -2,6 +2,7 @@ __author__ = 'konradk'
 
 from .generic import *
 import pickle
+import copy
 
 root = 'gs://gnomad-resources/constraint/hail-0.2'
 
@@ -16,24 +17,17 @@ all_possible_summary_unfiltered_pickle = 'gs://gnomad-resources/constraint/hail-
 
 # Input datasets
 context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.mt'
-split_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.split.mt'
-# processed_genomes_ht_path = f'{root}/genomes_processed.ht'
-processed_exomes_ht_path = f'{root}/exomes_processed.ht'
+split_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/context_processed.mt'
 processed_genomes_ht_path = f'{root}/genomes_processed.mt'
-# processed_exomes_ht_path = f'{root}/exomes_processed.mt'
+processed_exomes_ht_path = f'{root}/exomes_processed.mt'
 
-# mutation_rate_ht_path = '{}/standard/mutation_rate.ht'.format(root)
-mutation_rate_ht_path = f'{root}/exploratory/mutation_rate_methylation_nocommon.ht'
-# po_coverage_ht_path = '{}/standard/prop_observed_by_coverage.ht'.format(root)
-po_coverage_ht_path = f'{root}/exploratory/prop_observed_by_coverage.ht'
-po_ht_path = '{}/standard/prop_observed.ht'.format(root)
-po_syn_ht_path = '{}/standard/prop_observed_syn.ht'.format(root)
+mutation_rate_ht_path = f'{root}/exploratory/mutation_rate_methylation_bins.ht'
+po_coverage_ht_path = f'{root}/exploratory/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
+po_ht_path = f'{root}/standard/prop_observed.ht'
+po_syn_ht_path = f'{root}/standard/prop_observed_syn.ht'
+constraint_ht_path = f'{root}/standard/constraint.ht'
 
-po_coverage_x_ht_path = '{}/standard/prop_observed_by_coverage_x.ht'.format(root)
-po_x_ht_path = '{}/standard/prop_observed_x.ht'.format(root)
-po_syn_x_ht_path = '{}/standard/prop_observed_syn_x.ht'.format(root)
-
-HIGH_COVERAGE_CUTOFF = 0.9
+HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')
 
 
@@ -120,19 +114,21 @@ def split_context_mt(raw_context_mt_path: str, coverage_ht_paths: Dict[str, str]
     raw_context_mt.write(split_context_mt_path, overwrite)
 
 
-def pre_process_data(ht_path: str, split_context_mt_path: str,
+def pre_process_data(ht_path: str, rf_path: str, split_context_mt_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
     # ht = hl.read_table(ht_path)
     # mt = hl.MatrixTable.from_rows_table(ht, partition_key='locus')
-    # mt.write(ht_path.replace('.ht', '.mt'))
+    # mt.write(ht_path.replace('.ht', '.mt'), overwrite)
     mt = hl.read_matrix_table(ht_path.replace('.ht', '.mt'))
     context_mt = hl.read_matrix_table(split_context_mt_path).drop('a_index', 'was_split')
     context_mt = context_mt.annotate_rows(vep=context_mt.vep.drop('colocated_variants'))
-    context_mt = hl.filter_intervals(context_mt, [hl.parse_locus_interval('1-22')])
-    mt.annotate_rows(**context_mt[mt.row_key, :]).write(output_ht_path, overwrite)
+    rf_ht = hl.read_table(rf_path)
+    mt.annotate_rows(**context_mt[mt.row_key, :],
+                     pass_filters=(hl.len(rf_ht[mt.row_key].filters) == 0) & (mt.freq[0].AC[1] > 0)
+                     ).write(output_ht_path, overwrite)
 
 
-def prepare_ht(ht, trimer: bool = False):
+def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
     if trimer:
         ht = trimer_from_heptamer(ht)
     str_len = 3 if trimer else 7
@@ -140,23 +136,40 @@ def prepare_ht(ht, trimer: bool = False):
     if isinstance(ht, hl.Table):
         ht = ht.annotate(ref=ht.alleles[0], alt=ht.alleles[1])
         ht = ht.filter((hl.len(ht.ref) == 1) & (hl.len(ht.alt) == 1) & ht.context.matches(f'[ATCG]{{{str_len}}}'))
-        ht = annotate_variant_types(collapse_strand(ht))
-        ht = ht.annotate(methylation_level=hl.cond(ht.cpg, hl.int(ht.methylation.MEAN * 10), -1),
-                         # hl.or_missing(ht.cpg, hl.int(ht.methylation.MEAN * 10)),
-                         csq=ht.vep.most_severe_consequence,
-                         exome_coverage=hl.int(ht.coverage.exomes.mean * 10))
+        ht = annotate_variant_types(collapse_strand(ht), not trimer)
     else:
         ht = ht.annotate_rows(ref=ht.alleles[0], alt=ht.alleles[1])
         ht = ht.filter_rows((hl.len(ht.ref) == 1) & (hl.len(ht.alt) == 1) & ht.context.matches(f'[ATCG]{{{str_len}}}'))
-        ht = annotate_variant_types(collapse_strand(ht))
-        ht = ht.annotate_rows(methylation_level=hl.cond(ht.cpg, hl.int(ht.methylation.MEAN * 10), -1),
-                              # hl.or_missing(ht.cpg, hl.int(ht.methylation.MEAN * 10)),
-                              csq=ht.vep.most_severe_consequence,
-                              exome_coverage=hl.int(ht.coverage.exomes.mean * 10))
-    return ht
+        ht = annotate_variant_types(collapse_strand(ht), not trimer)
+    annotation = {
+        'methylation_level': hl.case().when(
+            ht.cpg & (ht.methylation.MEAN > 0.6), 2
+        ).when(
+            ht.cpg & (ht.methylation.MEAN > 0.2), 1
+        ).default(0),
+        # 'methylation_level': hl.cond(ht.cpg, hl.int(ht.methylation.MEAN * 10), -1),
+        'csq': ht.vep.most_severe_consequence
+    }
+    if annotate_coverage:
+        # coverage_binning = 100
+        coverage_binning = 1
+        annotation['exome_coverage'] = hl.int(ht.coverage.exomes.median * coverage_binning) / coverage_binning
+        # hl.int(ht.coverage.exomes.over_20 * coverage_binning) / coverage_binning
+    return ht.annotate(**annotation) if isinstance(ht, hl.Table) else ht.annotate_rows(**annotation)
 
 
-# Explore mu
+def filter_to_autosomes_par(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]:
+    return ht.filter(ht.locus.in_autosome_or_par())
+
+
+def annotate_with_mu(ht: hl.Table, mutation_ht: hl.Table, output_loc: str = 'mu_snp',
+                     keys: Tuple[str] = ('context', 'ref', 'alt', 'methylation_level')) -> hl.Table:
+    mu = hl.literal(mutation_ht.aggregate(hl.dict(hl.agg.collect(
+        (hl.struct(**{k: mutation_ht[k] for k in keys}), mutation_ht.mu_snp)))))
+    mu = mu.get(hl.struct(**{k: ht[k] for k in keys}))
+    return ht.annotate(**{output_loc: hl.case().when(hl.is_defined(mu), mu).or_error('Missing mu')})
+
+
 def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixTable,
                                  recalculate_all_possible_summary: bool = True,
                                  recalculate_all_possible_summary_unfiltered: bool = False,
@@ -168,8 +181,8 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
     context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
     genome_ht = remove_coverage_outliers(genome_ht)
 
-    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq')
-    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq', 'freq')
+    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq', *grouping_variables)
+    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq', 'freq', 'pass_filters', *grouping_variables)
 
     if grouping_variables:
         context_ht = context_ht.filter_rows(hl.all(lambda x: x, [hl.is_defined(context_ht[x]) for x in grouping_variables]))
@@ -178,20 +191,26 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
         context_ht = filter_for_mu(context_ht)
         genome_ht = filter_for_mu(genome_ht)
 
+    genome_join = genome_ht[context_ht.row_key, :]
     if remove_common:
         ac_cutoff = 5
         downsampling_level = 1000
-        # Removes anything with AC > ac_cutoff from denominator
-        genome_freq = genome_ht[context_ht.row_key, :].freq
+        # In the denominator, only keep variants not in the genome dataset, or with AC <= ac_cutoff and passing filters
         context_ht = context_ht.filter_rows(
-            hl.is_missing(genome_freq) |
-            hl.any(lambda f: (f.AC[1] <= ac_cutoff) & (f.meta.get('downsampling') == str(downsampling_level)) &
-                             (f.meta.get('pop') == 'global') & (f.meta.get('group') == 'adj') & (f.meta.size() == 3),
-                   genome_freq)
+            hl.is_missing(genome_join) |
+            (hl.any(lambda f: (f.AC[1] <= ac_cutoff) & (f.meta.get('downsampling') == str(downsampling_level)) &
+                              (f.meta.get('pop') == 'global') & (f.meta.get('group') == 'adj') & (f.meta.size() == 3),
+                    genome_join.freq) & genome_join.pass_filters)
         ).rows()
         # Keep only AC < ac_cutoff + 1 in numerator
-        genome_ht = filter_by_frequency(genome_ht, allele_count=ac_cutoff + 1, downsampling=downsampling_level,
-                                        direction='below', adj=True).rows()
+        genome_ht = filter_by_frequency(genome_ht, 'below', allele_count=ac_cutoff + 1,
+                                        downsampling=downsampling_level, adj=True)
+    else:
+        context_ht = context_ht.filter_rows(
+            hl.is_missing(genome_join) | genome_join.pass_filters
+        ).rows()
+    genome_ht = filter_by_frequency(genome_ht.filter_rows(genome_ht.pass_filters),
+                                    'above', allele_count=0, adj=True).rows()
 
     if not summary_file: summary_file = all_possible_summary_pickle
     all_possible_dtype = count_variants(context_ht, omit_methylation=omit_methylation,
@@ -209,7 +228,8 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
         all_possible_unfiltered = {x: y for x, y in list(all_possible_unfiltered.items()) if x.context is not None}
         with hl.hadoop_open(all_possible_summary_unfiltered_pickle, 'wb') as f:
             pickle.dump(all_possible_unfiltered, f)
-    all_possible_unfiltered = load_all_possible_summary(filtered=False)
+    # Uncomment this line and next few commented lines to back-calculate total_mu from the old mutation rate dataset
+    # all_possible_unfiltered = load_all_possible_summary(filtered=False)
 
     genome_ht = count_variants(genome_ht, count_downsamplings=['global', 'nfe', 'afr'],
                                count_singletons=count_singletons,
@@ -236,71 +256,208 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
                                             downsamplings_mu_afr=hl.literal(correction_factors_afr) * ht.downsampling_counts_afr / ht.possible_variants))
     downsamplings = ht.downsamplings.collect()[0]
     index_1kg = downsamplings.index(1000)
-    return ht.annotate(mu_snp=ht.downsamplings_mu_snp[index_1kg],
+    return ht.annotate(proportion_observed_1kg=ht.downsampling_counts_global[index_1kg] / ht.possible_variants,
+                       proportion_observed=ht.variant_count / ht.possible_variants,
+                       mu_snp=ht.downsamplings_mu_snp[index_1kg],
                        mu_snp_nfe=ht.downsamplings_mu_nfe[index_1kg],
                        mu_snp_afr=ht.downsamplings_mu_afr[index_1kg])
 
 
 def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
-                                        recompute_possible: bool = False, remove_common: bool = True) -> hl.Table:
+                                        recompute_possible: bool = False, remove_from_denominator: bool = True,
+                                        remove_filtered: bool = True, remove_ac0: bool = False) -> hl.Table:
 
     context_ht = fast_filter_vep(context_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage')
     context_ht = context_ht.filter_rows(hl.is_defined(context_ht.exome_coverage))
 
-    # pass_autosomes_exome_ht = filter_to_pass(autosomes_exome_ht)  # TODO
-    exome_ht = fast_filter_vep(exome_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage', 'freq')
+    exome_ht = fast_filter_vep(exome_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage', 'freq', 'pass_filters')
 
     grouping = ('exome_coverage',)
     af_cutoff = 0.001
 
-    if remove_common:
-        exome_freq = exome_ht[context_ht.row_key, :].freq
-        context_ht = context_ht.filter_rows(
-            hl.is_missing(exome_freq) |
-            hl.any(lambda f: (f.AF[1] <= af_cutoff) & (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
-                   exome_freq)
-        ).rows()
+    exome_join = exome_ht[context_ht.row_key, :]
+    keep_criteria = True
+    if remove_from_denominator:
+        keep_criteria &= hl.any(lambda f: (f.AF[1] <= af_cutoff) &  # (f.AF[1] > 0) &
+                                          (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
+                                exome_join.freq)
+    if remove_filtered:
+        keep_criteria &= exome_join.pass_filters
+    context_ht = context_ht.filter_rows(hl.is_missing(exome_join) | keep_criteria).rows()
 
-    exome_ht = filter_by_frequency(exome_ht, af_cutoff, direction='below').rows()
+    if remove_filtered:
+        exome_ht = exome_ht.filter_rows(exome_ht.pass_filters)
 
-    possible_file = 'gs://konradk/tmp/possible.pckl'
+    if remove_ac0:
+        exome_ht = filter_by_frequency(exome_ht, 'above', allele_count=0)
+    exome_ht = filter_by_frequency(exome_ht, 'below', frequency=af_cutoff).rows()
+
+    possible_file = 'gs://konradk/tmp/possible_coverage.ht'
     if recompute_possible:
-        possible_variants = count_variants(context_ht.rows(), additional_grouping=grouping)
-        with hl.hadoop_open(possible_file, 'wb') as f:
-            pickle.dump(possible_variants, f)
+        possible_ht = count_variants(context_ht, additional_grouping=grouping, force_grouping=True)
+        possible_ht = annotate_with_mu(possible_ht, mutation_ht)
+        possible_ht.transmute(possible_variants=possible_ht.variant_count).write(possible_file, True)
 
-    with hl.hadoop_open(possible_file, 'rb') as f:
-        possible_variants = pickle.load(f)
-
-    variant_counts_dtype = count_variants(context_ht.rows(), additional_grouping=grouping, return_type_only=True)
+    possible_ht = hl.read_table(possible_file)
     ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=('global',))
-    ht = ht.annotate(possible_variants=hl.literal(possible_variants.variant_count, dtype=variant_counts_dtype)[ht.key],
-                     mu_snp=mutation_ht[hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt, methylation_level=ht.methylation_level)].mu_snp)
+    ht = ht.join(possible_ht, 'outer')
     return ht
 
 
+def build_models(coverage_ht: hl.Table, trimers: bool = False) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
+    keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
+
+    all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= HIGH_COVERAGE_CUTOFF)
+    high_coverage_ht = all_high_coverage_ht.group_by(*keys).aggregate(
+        high_coverage_proportion_observed=hl.agg.sum(all_high_coverage_ht.variant_count) /
+                                          hl.agg.sum(all_high_coverage_ht.possible_variants))
+
+    plateau_models = build_plateau_models(annotate_variant_types(high_coverage_ht, not trimers))
+
+    high_coverage_scale_factor = all_high_coverage_ht.aggregate(
+        hl.agg.sum(all_high_coverage_ht.variant_count) /
+        hl.agg.sum(all_high_coverage_ht.possible_variants * all_high_coverage_ht.mu_snp))
+
+    all_low_coverage_ht = coverage_ht.filter((coverage_ht.exome_coverage < HIGH_COVERAGE_CUTOFF) &
+                                             (coverage_ht.exome_coverage > 0))
+
+    low_coverage_ht = all_low_coverage_ht.group_by(log_coverage=hl.log10(all_low_coverage_ht.exome_coverage)).aggregate(
+        low_coverage_obs_exp=hl.agg.sum(all_low_coverage_ht.variant_count) /
+                             (high_coverage_scale_factor * hl.agg.sum(all_low_coverage_ht.possible_variants * all_low_coverage_ht.mu_snp)))
+    coverage_model = build_coverage_model(low_coverage_ht)
+
+    return coverage_model, plateau_models
+
+
+def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
+                            plateau_models: Dict[str, Tuple[float, float]], coverage_model: Tuple[float, float],
+                            confirm_model_only: bool = False,
+                            recompute_possible: bool = False, remove_from_denominator: bool = True) -> hl.Table:
+
+    context_ht = fast_filter_vep(context_ht, syn=confirm_model_only, canonical=confirm_model_only)
+    exome_ht = fast_filter_vep(exome_ht, syn=confirm_model_only, canonical=confirm_model_only)
+
+    if confirm_model_only:
+        context_ht = context_ht.annotate_rows(vep=context_ht.vep.annotate(transcript_consequences=context_ht.vep.transcript_consequences[0]))
+        exome_ht = exome_ht.annotate_rows(vep=exome_ht.vep.annotate(transcript_consequences=exome_ht.vep.transcript_consequences[0]))
+    else:
+        context_ht = context_ht.explode_rows(context_ht.vep.transcript_consequences)
+        exome_ht = exome_ht.explode_rows(exome_ht.vep.transcript_consequences)
+
+    context_ht, _ = annotate_constraint_groupings(context_ht)
+    exome_ht, grouping = annotate_constraint_groupings(exome_ht)
+
+    context_ht = context_ht.filter_rows(hl.is_defined(context_ht.exome_coverage)).select_rows(
+        'context', 'ref', 'alt', 'methylation_level', *grouping)
+    exome_ht = exome_ht.select_rows(
+        'context', 'ref', 'alt', 'methylation_level', 'freq', 'pass_filters', *grouping)
+
+    af_cutoff = 0.001
+
+    exome_join = exome_ht[context_ht.row_key, :]
+    if remove_from_denominator:
+        context_ht = context_ht.filter_rows(
+            hl.is_missing(exome_join) |
+            (hl.any(lambda f: (f.AF[1] <= af_cutoff) & (f.AF[1] > 0) & (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
+                    exome_join.freq) & exome_join.pass_filters)
+        ).rows()
+    else:
+        context_ht = context_ht.rows()
+
+    exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.coverage > 0), 'above', allele_count=0)
+    exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.pass_filters), 'below', frequency=af_cutoff).rows()
+
+    possible_file = f'gs://konradk/tmp/possible_transcript{"_syn" if confirm_model_only else ""}.ht'
+    if recompute_possible:
+        ht = count_variants(context_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)
+        ht = annotate_with_mu(ht, mutation_ht)
+        ht = ht.transmute(possible_variants=ht.variant_count)
+        ht = annotate_variant_types(ht.annotate(mu_agg=ht.mu_snp * ht.possible_variants))
+        model = hl.literal(plateau_models)[ht.cpg]
+        ht = ht.annotate(adjusted_mutation_rate=ht.mu_agg * model[1] + model[0],
+                         coverage_correction=hl.case()
+                         .when(ht.coverage == 0, 0)
+                         .when(ht.coverage >= HIGH_COVERAGE_CUTOFF, 1)
+                         .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0]))
+        ht = ht.annotate(expected_variants=ht.adjusted_mutation_rate * ht.coverage_correction)
+        ht.write(possible_file, True)
+
+    possible_variants_ht = hl.read_table(possible_file)
+    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)  # , count_downsamplings=('global',))
+    ht = ht.join(possible_variants_ht, 'outer')
+    ht.write('gs://konradk/tmp.ht', True)
+    ht = hl.read_table('gs://konradk/tmp.ht')
+
+    grouping.remove('coverage')
+    ht = ht.group_by(*grouping).partition_hint(1000).aggregate(variant_count=hl.agg.sum(ht.variant_count),
+                                                               possible_variants=hl.agg.sum(ht.possible_variants),
+                                                               expected_variants=hl.agg.sum(ht.expected_variants))
+    return ht.annotate(obs_exp=ht.variant_count / ht.expected_variants)
+
+
+def finalize_dataset(po_ht: hl.Table, n_partitions: int = 100) -> hl.Table:
+    keys = ('transcript', 'gene', 'canonical')
+    po_ht = po_ht.repartition(n_partitions).drop('possible_variants', 'obs_exp').persist()
+    lof_ht = po_ht.filter(po_ht.modifier == 'HC')
+    lof_ht = lof_ht.group_by(*keys).aggregate(variant_count=hl.agg.sum(lof_ht.variant_count),
+                                              expected_variants=hl.agg.sum(
+                                                  lof_ht.expected_variants)).persist()
+    lof_ht = lof_ht.annotate(**pLI(lof_ht)[lof_ht.key])
+    lof_ht = lof_ht.transmute(obs_lof=lof_ht.variant_count, exp_lof=lof_ht.expected_variants,
+                              oe_lof=lof_ht.variant_count / lof_ht.expected_variants
+                              ).key_by(*keys)
+
+    mis_ht = po_ht.filter(po_ht.annotation == 'missense_variant')
+    mis_ht = mis_ht.group_by(*keys).aggregate(obs_mis=hl.agg.sum(mis_ht.variant_count),
+                                              exp_mis=hl.agg.sum(mis_ht.expected_variants),
+                                              oe_mis=hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants)
+                                              )
+
+    pphen_mis_ht = po_ht.filter(po_ht.modifier == 'probably_damaging').key_by(*keys).drop('modifier', 'annotation')
+    pphen_mis_ht = pphen_mis_ht.transmute(obs_mis_pphen=pphen_mis_ht.variant_count,
+                                          exp_mis_pphen=pphen_mis_ht.expected_variants,
+                                          oe_mis_pphen=pphen_mis_ht.variant_count / pphen_mis_ht.expected_variants)
+
+    syn_ht = po_ht.filter(po_ht.annotation == 'synonymous_variant').key_by(*keys).drop('modifier', 'annotation')
+    syn_ht = syn_ht.transmute(obs_syn=syn_ht.variant_count, exp_syn=syn_ht.expected_variants,
+                              oe_mis_syn=syn_ht.variant_count / syn_ht.expected_variants)
+
+    return lof_ht.annotate(**mis_ht[lof_ht.key], **pphen_mis_ht[lof_ht.key], **syn_ht[lof_ht.key])
+
+
+def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable]) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
+    groupings = {
+        'annotation': ht.vep.transcript_consequences.most_severe_consequence,
+        'modifier': hl.case()
+            .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
+                  ht.vep.transcript_consequences.polyphen_prediction)
+            .when(hl.is_defined(ht.vep.transcript_consequences.lof),
+                  ht.vep.transcript_consequences.lof)
+            .default('None'),
+        'transcript': ht.vep.transcript_consequences.transcript_id,
+        'gene': ht.vep.transcript_consequences.gene_symbol,
+        'canonical': hl.or_else(ht.vep.transcript_consequences.canonical == 1, False),
+        'coverage': ht.exome_coverage
+    }
+    ht = ht.annotate(**groupings) if isinstance(ht, hl.Table) else ht.annotate_rows(**groupings)
+    return ht, list(groupings.keys())
+
+
 # Model building
-def calculate_coverage_model(coverage_ht: hl.Table) -> (float, float):
+def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
     """
-    Calibrates coverage model (returns slope and intercept)
+    Calibrates coverage model (returns intercept and slope)
     """
-    coverage_pd = coverage_ht.to_pandas()
-    lm = smf.ols(formula='log_mean_scaled_proportion_observed ~ log_coverage', data=coverage_pd).fit()
-    slope = lm.params['log_coverage']
-    intercept = lm.params['Intercept']
-    return slope, intercept
+    return tuple(coverage_ht.aggregate(hl.agg.linreg(coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage])).beta)
 
 
-def build_plateau_models(ht: hl.Table) -> dict:
+def build_plateau_models(ht: hl.Table) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns slope and intercept)
+    Calibrates high coverage model (returns intercept and slope)
     """
-    output = {}
-    for variant_type_model in VARIANT_TYPES_FOR_MODEL:
-        high_coverage_pd = ht.filter(ht.variant_type_model == variant_type_model).to_pandas()
-        lm = smf.ols(formula='high_coverage_proportion_observed ~ mutation_rate', data=high_coverage_pd).fit()
-        output[variant_type_model] = dict(lm.params)
-    return output
+    return ht.aggregate(hl.agg.group_by(ht.cpg,
+                                        hl.agg.linreg(ht.high_coverage_proportion_observed, [1, ht.mu_snp])
+                                       ).map_values(lambda x: x.beta))
 
 
 # Plotting
@@ -318,3 +475,23 @@ def old_new_compare(source, axis_type='log'):
     # p1.ray(x=[1e-9], y=[1e-9], length=0, angle=[45], angle_units="deg", color="#FB8072", line_width=2)
     p1.legend.location = "top_left"
     return p1
+
+
+def pLI(ht: hl.Table) -> hl.Table:
+    last_pi = {'Null': 0, 'Rec': 0, 'LI': 0}
+    pi = {'Null': 1 / 3, 'Rec': 1 / 3, 'LI': 1 / 3}
+    expected_values = {'Null': 1, 'Rec': 0.463, 'LI': 0.089}
+
+    while abs(pi['LI'] - last_pi['LI']) > 0.001:
+        last_pi = copy.deepcopy(pi)
+        ht = ht.annotate(
+            **{k: v * hl.dpois(ht.variant_count, ht.expected_variants * expected_values[k]) for k, v in pi.items()})
+        ht = ht.annotate(row_sum=hl.sum([ht[k] for k in pi]))
+        ht = ht.annotate(**{k: ht[k] / ht.row_sum for k, v in pi.items()})
+        pi = ht.aggregate({k: hl.agg.mean(ht[k]) for k in pi.keys()})
+
+    ht = ht.annotate(
+        **{k: v * hl.dpois(ht.variant_count, ht.expected_variants * expected_values[k]) for k, v in pi.items()})
+    ht = ht.annotate(row_sum=hl.sum([ht[k] for k in pi]))
+    return ht.select(**{f'p{k}': ht[k] / ht.row_sum for k, v in pi.items()})
+
