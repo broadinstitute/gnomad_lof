@@ -8,7 +8,7 @@ root = 'gs://gnomad-resources/constraint/hail-0.2'
 
 # Unprocessed files
 fasta_path = "{}/reference/Homo_sapiens_assembly19.fasta".format(root)
-gerp_annotations_path = 'gs://annotationdb/hail-0.2/hail-tables/GRCh37/gerp.scores.GRCh37.ht'  # Gerp is in here as S
+gerp_annotations_path = 'gs://gnomad-resources/annotations/gerp.scores.GRCh37.ht'  # Gerp is in here as S
 regional_variation_raw_path = 'gs://gnomad-resources/constraint/source/whole_genome_regional_variation_in_mutation_rate.50kb_bins.txt'
 
 # Mu exploratory analyses
@@ -16,7 +16,7 @@ all_possible_summary_pickle = 'gs://konradk/tmp/all_possible_counts_by_context.p
 all_possible_summary_unfiltered_pickle = 'gs://gnomad-resources/constraint/hail-0.2/exploratory/all_possible_counts_by_context_unfiltered.pckl'
 
 # Input datasets
-context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.mt'
+context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only_20180907.mt'
 split_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/context_processed.mt'
 processed_genomes_ht_path = f'{root}/genomes_processed.mt'
 processed_exomes_ht_path = f'{root}/exomes_processed.mt'
@@ -98,7 +98,9 @@ def import_fasta() -> None:
 
 def split_context_mt(raw_context_mt_path: str, coverage_ht_paths: Dict[str, str], methylation_ht_path: str,
                      split_context_mt_path: str, overwrite: bool = False) -> None:
-    raw_context_mt = split_multi_dynamic(hl.read_matrix_table(raw_context_mt_path))
+    # raw_context_mt = hl.split_multi_hts(hl.read_matrix_table(raw_context_mt_path))
+    # raw_context_mt.write(f'{raw_context_mt_path}.split.mt', overwrite)
+    raw_context_mt = hl.read_matrix_table(f'{raw_context_mt_path}.split.mt')
 
     coverage_hts = {loc: hl.read_table(coverage_ht_path) for loc, coverage_ht_path in coverage_ht_paths.items()}
     coverage_hts = {loc: coverage_ht.drop('#chrom', 'pos') if '#chrom' in list(coverage_ht.row) else coverage_ht
@@ -112,6 +114,19 @@ def split_context_mt(raw_context_mt_path: str, coverage_ht_paths: Dict[str, str]
         gerp=gerp_ht[raw_context_mt.locus].S)
 
     raw_context_mt.write(split_context_mt_path, overwrite)
+
+
+def vep_context_mt():
+    mt_full = hl.read_matrix_table('gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.mt')
+    chunks = ('1-2', '3-4', '5-6',  '7-9', '10-12', '13-15', '16-18', '19-22', 'X-Y')
+    for i in chunks:
+        print(i)
+        mt = hl.filter_intervals(mt_full, [hl.parse_locus_interval(i)])
+        hl.vep(mt, vep_config).write(f'gs://gnomad-resources/context/hail-0.2/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.mt', overwrite=True, stage_locally=True)
+    print('Done! Combining...')
+    hts = [hl.read_matrix_table(f'gs://gnomad-resources/context/hail-0.2/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.mt') for i in chunks]
+    ht = hts[0].union_rows(*hts[1:])
+    ht.write(context_mt_path, True)
 
 
 def pre_process_data(ht_path: str, rf_path: str, split_context_mt_path: str,
@@ -146,9 +161,8 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
             ht.cpg & (ht.methylation.MEAN > 0.6), 2
         ).when(
             ht.cpg & (ht.methylation.MEAN > 0.2), 1
-        ).default(0),
+        ).default(0)
         # 'methylation_level': hl.cond(ht.cpg, hl.int(ht.methylation.MEAN * 10), -1),
-        'csq': ht.vep.most_severe_consequence
     }
     if annotate_coverage:
         # coverage_binning = 100
@@ -179,10 +193,10 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
                                  ) -> hl.Table:
 
     context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
-    genome_ht = remove_coverage_outliers(genome_ht)
+    genome_ht = filter_to_autosomes(remove_coverage_outliers(genome_ht))
 
-    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq', *grouping_variables)
-    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'csq', 'freq', 'pass_filters', *grouping_variables)
+    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', *grouping_variables)
+    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'freq', 'pass_filters', *grouping_variables)
 
     if grouping_variables:
         context_ht = context_ht.filter_rows(hl.all(lambda x: x, [hl.is_defined(context_ht[x]) for x in grouping_variables]))
@@ -244,7 +258,7 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
     total_bases = ht.aggregate(hl.agg.sum(ht.possible_variants)) // 3
     # total_bases_unfiltered = ht.aggregate(hl.agg.sum(ht.possible_variants_unfiltered)) // 3
     # total_mu = ht.aggregate(hl.agg.sum(ht.old_mu_snp * ht.possible_variants_unfiltered) / total_bases_unfiltered)
-    total_mu = 1.1926e-08  # (should be 1.2e-08)
+    total_mu = 1.2e-08
 
     correction_factors = ht.aggregate(total_mu / (hl.agg.array_sum(ht.downsampling_counts_global) / total_bases))
     correction_factors_nfe = ht.aggregate(total_mu / (hl.agg.array_sum(ht.downsampling_counts_nfe) / total_bases))
@@ -309,10 +323,16 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False) -> Tuple[Tuple[fl
 
     all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= HIGH_COVERAGE_CUTOFF)
     high_coverage_ht = all_high_coverage_ht.group_by(*keys).aggregate(
-        high_coverage_proportion_observed=hl.agg.sum(all_high_coverage_ht.variant_count) /
-                                          hl.agg.sum(all_high_coverage_ht.possible_variants))
+        observed_variants=hl.agg.sum(all_high_coverage_ht.variant_count),
+        possible_variants=hl.agg.sum(all_high_coverage_ht.possible_variants))
 
-    plateau_models = build_plateau_models(annotate_variant_types(high_coverage_ht, not trimers))
+    plateau_models = build_plateau_models(
+        annotate_variant_types(
+            high_coverage_ht.annotate(
+                high_coverage_proportion_observed=high_coverage_ht.observed_variants / high_coverage_ht.possible_variants
+            ), not trimers),
+        weighted=False
+    )
 
     high_coverage_scale_factor = all_high_coverage_ht.aggregate(
         hl.agg.sum(all_high_coverage_ht.variant_count) /
@@ -390,6 +410,7 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
 
     grouping.remove('coverage')
     ht = ht.group_by(*grouping).partition_hint(1000).aggregate(variant_count=hl.agg.sum(ht.variant_count),
+                                                               adjusted_mutation_rate=hl.agg.sum(ht.adjusted_mutation_rate),
                                                                possible_variants=hl.agg.sum(ht.possible_variants),
                                                                expected_variants=hl.agg.sum(ht.expected_variants))
     return ht.annotate(obs_exp=ht.variant_count / ht.expected_variants)
@@ -397,15 +418,26 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
 
 def finalize_dataset(po_ht: hl.Table, n_partitions: int = 100) -> hl.Table:
     keys = ('transcript', 'gene', 'canonical')
-    po_ht = po_ht.repartition(n_partitions).drop('possible_variants', 'obs_exp').persist()
+    po_ht = po_ht.repartition(n_partitions).persist()
+
+    # Getting classic LoF annotations (no LOFTEE)
+    classic_lof_annotations = hl.literal({'stop_gained', 'splice_donor_variant', 'splice_acceptor_variant'})
+    lof_ht_classic = po_ht.filter(classic_lof_annotations.contains(po_ht.annotation) &
+                                  ((po_ht.modifier == 'HC') | (po_ht.modifier == 'LC')))
+    lof_ht_classic = collapse_lof_ht(lof_ht_classic, keys)
+    lof_ht_classic = lof_ht_classic.rename({x: f'{x}_classic' for x in list(lof_ht_classic.row_value)})
+
+    # Getting classic LoF annotations (with LOFTEE)
+    lof_ht_classic_hc = po_ht.filter(classic_lof_annotations.contains(po_ht.annotation) & (po_ht.modifier == 'HC'))
+    lof_ht_classic_hc = collapse_lof_ht(lof_ht_classic_hc, keys)
+    lof_ht_classic_hc = lof_ht_classic_hc.rename({x: f'{x}_classic_hc' for x in list(lof_ht_classic_hc.row_value)})
+
+    # TODO: assess diff of this and classic HC counts to view depletions
+    # Getting all LoF annotations (LOFTEE HC + new splice variants)
     lof_ht = po_ht.filter(po_ht.modifier == 'HC')
-    lof_ht = lof_ht.group_by(*keys).aggregate(variant_count=hl.agg.sum(lof_ht.variant_count),
-                                              expected_variants=hl.agg.sum(
-                                                  lof_ht.expected_variants)).persist()
-    lof_ht = lof_ht.annotate(**pLI(lof_ht)[lof_ht.key])
-    lof_ht = lof_ht.transmute(obs_lof=lof_ht.variant_count, exp_lof=lof_ht.expected_variants,
-                              oe_lof=lof_ht.variant_count / lof_ht.expected_variants
-                              ).key_by(*keys)
+    po_ht = po_ht.drop('possible_variants', 'adjusted_mutation_rate', 'obs_exp')
+    lof_ht = collapse_lof_ht(lof_ht, keys)
+    lof_ht = lof_ht.annotate(**oe_confidence_interval(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key])
 
     mis_ht = po_ht.filter(po_ht.annotation == 'missense_variant')
     mis_ht = mis_ht.group_by(*keys).aggregate(obs_mis=hl.agg.sum(mis_ht.variant_count),
@@ -418,11 +450,29 @@ def finalize_dataset(po_ht: hl.Table, n_partitions: int = 100) -> hl.Table:
                                           exp_mis_pphen=pphen_mis_ht.expected_variants,
                                           oe_mis_pphen=pphen_mis_ht.variant_count / pphen_mis_ht.expected_variants)
 
-    syn_ht = po_ht.filter(po_ht.annotation == 'synonymous_variant').key_by(*keys).drop('modifier', 'annotation')
+    # TODO: change this to aggregate to get the non-None ones?
+    syn_ht = po_ht.filter((po_ht.annotation == 'synonymous_variant') & (po_ht.modifier == 'None')).key_by(*keys).drop('modifier', 'annotation')
     syn_ht = syn_ht.transmute(obs_syn=syn_ht.variant_count, exp_syn=syn_ht.expected_variants,
                               oe_mis_syn=syn_ht.variant_count / syn_ht.expected_variants)
 
-    return lof_ht.annotate(**mis_ht[lof_ht.key], **pphen_mis_ht[lof_ht.key], **syn_ht[lof_ht.key])
+    ht = lof_ht_classic.annotate(**mis_ht[lof_ht_classic.key], **pphen_mis_ht[lof_ht_classic.key],
+                                 **syn_ht[lof_ht_classic.key], **lof_ht[lof_ht_classic.key],
+                                 **lof_ht_classic_hc[lof_ht_classic.key])
+    ht = ht.annotate(**oe_confidence_interval(ht, ht.obs_lof_classic_hc, ht.exp_lof_classic_hc,
+                                              prefix='oe_classic_hc')[ht.key])
+    return ht.annotate(**oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof)[ht.key])
+
+
+def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str]) -> hl.Table:
+    lof_ht = lof_ht.group_by(*keys).aggregate(obs_lof=hl.agg.sum(lof_ht.variant_count),
+                                              exp_lof=hl.agg.sum(lof_ht.expected_variants),
+                                              possible_lof=hl.agg.sum(lof_ht.possible_variants),
+                                              adjusted_mu_lof=hl.agg.sum(
+                                                  lof_ht.adjusted_mutation_rate)).persist()
+    lof_ht = lof_ht.filter(lof_ht.exp_lof > 0)
+    return lof_ht.annotate(
+        **pLI(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key],
+        oe_lof=lof_ht.obs_lof / lof_ht.exp_lof).key_by(*keys)
 
 
 def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable]) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
@@ -451,12 +501,13 @@ def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
     return tuple(coverage_ht.aggregate(hl.agg.linreg(coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage])).beta)
 
 
-def build_plateau_models(ht: hl.Table) -> Dict[str, Tuple[float, float]]:
+def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
     Calibrates high coverage model (returns intercept and slope)
     """
     return ht.aggregate(hl.agg.group_by(ht.cpg,
-                                        hl.agg.linreg(ht.high_coverage_proportion_observed, [1, ht.mu_snp])
+                                        hl.agg.linreg(ht.high_coverage_proportion_observed, [1, ht.mu_snp],
+                                                      weight=ht.possible_variants if weighted else None)
                                        ).map_values(lambda x: x.beta))
 
 
@@ -477,21 +528,50 @@ def old_new_compare(source, axis_type='log'):
     return p1
 
 
-def pLI(ht: hl.Table) -> hl.Table:
+def pLI(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression) -> hl.Table:
     last_pi = {'Null': 0, 'Rec': 0, 'LI': 0}
     pi = {'Null': 1 / 3, 'Rec': 1 / 3, 'LI': 1 / 3}
     expected_values = {'Null': 1, 'Rec': 0.463, 'LI': 0.089}
+    ht = ht.annotate(_obs=obs, _exp=exp)
 
     while abs(pi['LI'] - last_pi['LI']) > 0.001:
         last_pi = copy.deepcopy(pi)
         ht = ht.annotate(
-            **{k: v * hl.dpois(ht.variant_count, ht.expected_variants * expected_values[k]) for k, v in pi.items()})
+            **{k: v * hl.dpois(ht._obs, ht._exp * expected_values[k]) for k, v in pi.items()})
         ht = ht.annotate(row_sum=hl.sum([ht[k] for k in pi]))
         ht = ht.annotate(**{k: ht[k] / ht.row_sum for k, v in pi.items()})
         pi = ht.aggregate({k: hl.agg.mean(ht[k]) for k in pi.keys()})
 
     ht = ht.annotate(
-        **{k: v * hl.dpois(ht.variant_count, ht.expected_variants * expected_values[k]) for k, v in pi.items()})
+        **{k: v * hl.dpois(ht._obs, ht._exp * expected_values[k]) for k, v in pi.items()})
     ht = ht.annotate(row_sum=hl.sum([ht[k] for k in pi]))
     return ht.select(**{f'p{k}': ht[k] / ht.row_sum for k, v in pi.items()})
 
+
+def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression,
+                           prefix: str = 'oe', alpha: float = 0.05) -> hl.Table:
+    ht = ht.annotate(_obs=obs, _exp=exp)
+    oe_ht = ht.annotate(range=hl.range(0, 2000).map(lambda x: hl.float64(x) / 1000))
+    oe_ht = oe_ht.annotate(range_dpois=oe_ht.range.map(lambda x: hl.dpois(oe_ht._obs, oe_ht._exp * x)))
+
+    oe_ht = oe_ht.annotate(cumulative_dpois=hl.cumulative_sum(oe_ht.range_dpois))
+    max_cumulative_dpois = oe_ht.cumulative_dpois[-1]
+    oe_ht = oe_ht.annotate(norm_dpois=oe_ht.cumulative_dpois.map(lambda x: x / max_cumulative_dpois))
+    oe_ht = oe_ht.annotate(
+        lower_idx=hl.argmax(oe_ht.norm_dpois.map(lambda x: hl.or_missing(x < alpha, x))),
+        upper_idx=hl.argmin(oe_ht.norm_dpois.map(lambda x: hl.or_missing(x > 1 - alpha, x)))
+    )
+    return oe_ht.select(**{
+        f'{prefix}_lower': oe_ht.range[oe_ht.lower_idx],
+        f'{prefix}_upper': oe_ht.range[oe_ht.upper_idx]
+    })
+
+
+def calculate_z(input_ht: hl.Table, observed: hl.expr.NumericExpression, expected: hl.expr.NumericExpression, output: str = 'z') -> hl.Table:
+    input_ht = input_ht.annotate(_obs=observed, _exp=expected)
+    ht = input_ht.filter(input_ht._obs > 0)
+    ht = ht.select(_z=ht._obs / ht._exp)
+    return input_ht.annotate(
+        reasons=hl.case().when(input_ht._obs == 0, 'zero_variants').or_missing(),
+        **{output: ht[input_ht.key]._z}
+    ).drop('_obs', '_exp')

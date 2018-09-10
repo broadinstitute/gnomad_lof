@@ -10,11 +10,9 @@ def main(args):
 
     if args.pre_process_data:
         # import_fasta()
+        # vep_context_mt()
         # split_context_mt(context_mt_path, {'exomes': coverage_ht_path('exomes'), 'genomes': coverage_ht_path('genomes')},
         #                  methylation_sites_mt_path(), split_context_mt_path, args.overwrite)
-        # mt = hl.read_matrix_table(split_context_mt_path)
-        # ht = hl.read_table(coverage_ht_path('exomes'))
-        # mt.annotate_rows(coverage=mt.coverage.annotate(exomes=ht[mt.locus])).write(new_split_context_mt_path)
         pre_process_data(annotations_ht_path('genomes', 'frequencies'), annotations_ht_path('genomes', 'rf'),
                          split_context_mt_path, processed_genomes_ht_path, args.overwrite)
         pre_process_data(annotations_ht_path('exomes', 'frequencies'), annotations_ht_path('exomes', 'rf'),
@@ -57,9 +55,10 @@ def main(args):
         coverage_ht = get_proportion_observed_by_coverage(exome_ht, context_ht, mutation_ht, True)
         annotate_variant_types(coverage_ht).write(po_coverage_ht_path, overwrite=args.overwrite)
 
-        coverage_x_ht = get_proportion_observed_by_coverage(exome_x_ht, context_x_ht, mutation_ht, False)
+        coverage_x_ht = get_proportion_observed_by_coverage(exome_x_ht, context_x_ht, mutation_ht, True)
         annotate_variant_types(coverage_x_ht).write(po_coverage_ht_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
 
+        # TODO: consider 20X cutoff for Y
         coverage_y_ht = get_proportion_observed_by_coverage(exome_y_ht, context_y_ht, mutation_ht, True)
         annotate_variant_types(coverage_y_ht).write(po_coverage_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
 
@@ -102,15 +101,13 @@ def main(args):
                                 coverage_model, recompute_possible=True).write(po_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
         hl.read_table(po_ht_path.replace('.ht', '_y.ht')).export(po_ht_path.replace('.ht', '_y.txt.bgz'))
 
-        ht = hl.read_table(po_ht_path).union(
-            hl.read_table(po_ht_path.replace('.ht', '_x.ht'))
-        ).union(
-            hl.read_table(po_ht_path.replace('.ht', '_y.ht'))
-        )
-        ht = finalize_dataset(ht)
-        # ht = ht.annotate(**oe_confidence_interval(ht)[ht.key])
-        ht.write(constraint_ht_path, args.overwrite)
-        hl.read_table(constraint_ht_path).export(constraint_ht_path.replace('.ht', '.txt.bgz'))
+    ht = hl.read_table(po_ht_path).union(
+        hl.read_table(po_ht_path.replace('.ht', '_x.ht'))
+    ).union(
+        hl.read_table(po_ht_path.replace('.ht', '_y.ht'))
+    )
+    finalize_dataset(ht).write(constraint_ht_path, args.overwrite)
+    hl.read_table(constraint_ht_path).export(constraint_ht_path.replace('.ht', '.txt.bgz'))
 
 
 if __name__ == '__main__':
