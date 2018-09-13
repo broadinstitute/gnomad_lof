@@ -31,11 +31,10 @@ def main(args):
                                                  recalculate_all_possible_summary_unfiltered=False)
         raw_mu_ht.write(mutation_rate_ht_path, overwrite=args.overwrite)
         # This command was run for Nicky for genome mutation rates
-        # raw_mu_ht = calculate_mu_by_downsampling(autosomes_genome_ht, full_context_ht,
-        #                                          summary_file='gs://konradk/tmp/all_possible_counts_by_context_with_common_var.pckl',
-        #                                          recalculate_all_possible_summary=True, remove_common=False,
-        #                                          recalculate_all_possible_summary_unfiltered=False)
-        # raw_mu_ht.write(f'{root}/exploratory/mutation_rate_methylation_with_common.ht', overwrite=args.overwrite)
+        # raw_mu_ht = calculate_mu_by_downsampling(genome_ht, full_context_ht,
+        #                                          summary_file=f'gs://konradk/tmp/all_possible_counts_by_context_remove_common_ordinary_trimers_{args.trimers}.pckl',
+        #                                          recalculate_all_possible_summary=True, remove_common_downsampled=False, remove_common_ordinary=True)
+        # raw_mu_ht.write(f'{root}/exploratory/mutation_rate_methylation_remove_common_ordinary_trimers_{args.trimers}.ht', overwrite=args.overwrite)
         hl.read_table(mutation_rate_ht_path).select('mu_snp').export(mutation_rate_ht_path.replace('.ht', '.txt.bgz'))
         send_message(args.slack_channel, 'Mutation rate calculated!')
 
@@ -101,13 +100,14 @@ def main(args):
                                 coverage_model, recompute_possible=True).write(po_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
         hl.read_table(po_ht_path.replace('.ht', '_y.ht')).export(po_ht_path.replace('.ht', '_y.txt.bgz'))
 
-    ht = hl.read_table(po_ht_path).union(
-        hl.read_table(po_ht_path.replace('.ht', '_x.ht'))
-    ).union(
-        hl.read_table(po_ht_path.replace('.ht', '_y.ht'))
-    )
-    finalize_dataset(ht).write(constraint_ht_path, args.overwrite)
-    hl.read_table(constraint_ht_path).export(constraint_ht_path.replace('.ht', '.txt.bgz'))
+    if args.finalize:
+        ht = hl.read_table(po_ht_path).union(
+            hl.read_table(po_ht_path.replace('.ht', '_x.ht'))
+        ).union(
+            hl.read_table(po_ht_path.replace('.ht', '_y.ht'))
+        )
+        finalize_dataset(ht).write(constraint_ht_path, args.overwrite)
+        hl.read_table(constraint_ht_path).export(constraint_ht_path.replace('.ht', '.txt.bgz'))
 
 
 if __name__ == '__main__':
@@ -120,6 +120,7 @@ if __name__ == '__main__':
     parser.add_argument('--get_mu_coverage', help='Calculate proportion observed by mu by coverage', action='store_true')
     parser.add_argument('--confirm_model', help='Confirm model on synonymous variants on canonical transcripts', action='store_true')
     parser.add_argument('--build_full_model', help='Apply model to all transcripts and variant types', action='store_true')
+    parser.add_argument('--finalize', help='Combine autosomes, X, Y, and calculate final metrics', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
     args = parser.parse_args()
 

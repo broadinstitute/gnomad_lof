@@ -149,12 +149,16 @@ def filter_for_mu(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.MatrixTable, h
     list(zip(summary_hist.gerp.bin_edges, cumulative_data / max(cumulative_data)))
     ```
     """
-    # criteria = ((t.gerp > -3.9885) & (t.gerp < 2.6607) &
-    #             ((t.vep.most_severe_consequence == 'intron_variant') |
-    #              (t.vep.most_severe_consequence == 'intergenic_variant')))
+    # This would pull out the consequence specific to each alternate allele, but in the case of intron and intergenic,
+    # the worst consequence for one substitution is also the worst for any other at the same site, so it's ok
+    # t = process_consequences(t)
+    # intronic = (t.vep.worst_consequence_term == "intron_variant")
+    # intergenic = (hl.is_missing(t.vep.transcript_consequences) | (hl.len(t.vep.transcript_consequences) == 0)
+    #               ) & (hl.is_defined(t.vep.intergenic_consequences) | (hl.len(t.vep.intergenic_consequences) > 0))
+    # criteria = (intronic | intergenic) & (t.gerp > -3.9885) & (t.gerp < 2.6607)
     criteria = ((t.gerp > -3.9885) & (t.gerp < 2.6607) &
-                ((t.csq == 'intron_variant') |
-                 (t.csq == 'intergenic_variant')))
+                ((t.vep.most_severe_consequence == 'intron_variant') |
+                 (t.vep.most_severe_consequence == 'intergenic_variant')))
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
 
@@ -171,11 +175,11 @@ def filter_vep(t: Union[hl.MatrixTable, hl.Table],
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
 
-def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn=True, canonical=True) -> Union[hl.Table, hl.MatrixTable]:
+def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True) -> Union[hl.Table, hl.MatrixTable]:
     transcript_csqs = t[vep_root].transcript_consequences.map(add_most_severe_consequence_to_consequence)
     criteria = [lambda csq: True]
-    if syn: criteria.append(lambda csq: (csq.most_severe_consequence == "synonymous_variant"))
-    if canonical: criteria.append(lambda csq: (csq.canonical == 1))
+    if syn: criteria.append(lambda csq: csq.most_severe_consequence == "synonymous_variant")
+    if canonical: criteria.append(lambda csq: csq.canonical == 1)
 
     def combine_functions(func_list, x):
         cond = func_list[0](x)

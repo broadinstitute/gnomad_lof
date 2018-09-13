@@ -188,15 +188,12 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
                                  recalculate_all_possible_summary: bool = True,
                                  recalculate_all_possible_summary_unfiltered: bool = False,
                                  omit_methylation: bool = False, count_singletons: bool = False,
-                                 remove_common: bool = True,
+                                 remove_common_downsampled: bool = True, remove_common_ordinary: bool = False,
                                  grouping_variables: Optional[Tuple[str]] = (), summary_file: str = None
                                  ) -> hl.Table:
 
     context_ht = filter_to_autosomes(remove_coverage_outliers(raw_context_ht))
     genome_ht = filter_to_autosomes(remove_coverage_outliers(genome_ht))
-
-    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', *grouping_variables)
-    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'gerp', 'freq', 'pass_filters', *grouping_variables)
 
     if grouping_variables:
         context_ht = context_ht.filter_rows(hl.all(lambda x: x, [hl.is_defined(context_ht[x]) for x in grouping_variables]))
@@ -205,8 +202,11 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
         context_ht = filter_for_mu(context_ht)
         genome_ht = filter_for_mu(genome_ht)
 
+    context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', *grouping_variables)
+    genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'freq', 'pass_filters', *grouping_variables)
+
     genome_join = genome_ht[context_ht.row_key, :]
-    if remove_common:
+    if remove_common_downsampled:
         ac_cutoff = 5
         downsampling_level = 1000
         # In the denominator, only keep variants not in the genome dataset, or with AC <= ac_cutoff and passing filters
@@ -219,12 +219,22 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
         # Keep only AC < ac_cutoff + 1 in numerator
         genome_ht = filter_by_frequency(genome_ht, 'below', allele_count=ac_cutoff + 1,
                                         downsampling=downsampling_level, adj=True)
+    elif remove_common_ordinary:
+        af_cutoff = 0.001
+        context_ht = context_ht.filter_rows(
+            hl.is_missing(genome_join) | (
+                    # hl.any(lambda f: (f.AF[1] <= af_cutoff) & (f.meta.get('group') == 'adj') & (f.meta.size() == 1), genome_join.freq) &
+                    (genome_join.freq[0].AF[1] <= af_cutoff) &
+                    genome_join.pass_filters
+            )
+        ).rows()
+        # Keep only AF < af_cutoff in numerator
+        genome_ht = filter_by_frequency(genome_ht, 'below', frequency=af_cutoff, adj=True)
     else:
         context_ht = context_ht.filter_rows(
             hl.is_missing(genome_join) | genome_join.pass_filters
         ).rows()
-    genome_ht = filter_by_frequency(genome_ht.filter_rows(genome_ht.pass_filters),
-                                    'above', allele_count=0, adj=True).rows()
+    genome_ht = genome_ht.filter_rows(genome_ht.pass_filters).rows()
 
     if not summary_file: summary_file = all_possible_summary_pickle
     all_possible_dtype = count_variants(context_ht, omit_methylation=omit_methylation,
@@ -318,7 +328,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
     return ht
 
 
-def build_models(coverage_ht: hl.Table, trimers: bool = False) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
+def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
     all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= HIGH_COVERAGE_CUTOFF)
@@ -331,7 +341,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False) -> Tuple[Tuple[fl
             high_coverage_ht.annotate(
                 high_coverage_proportion_observed=high_coverage_ht.observed_variants / high_coverage_ht.possible_variants
             ), not trimers),
-        weighted=False
+        weighted=weighted
     )
 
     high_coverage_scale_factor = all_high_coverage_ht.aggregate(
@@ -345,6 +355,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False) -> Tuple[Tuple[fl
         low_coverage_obs_exp=hl.agg.sum(all_low_coverage_ht.variant_count) /
                              (high_coverage_scale_factor * hl.agg.sum(all_low_coverage_ht.possible_variants * all_low_coverage_ht.mu_snp)))
     coverage_model = build_coverage_model(low_coverage_ht)
+    # TODO: consider weighting here as well
 
     return coverage_model, plateau_models
 
@@ -445,12 +456,14 @@ def finalize_dataset(po_ht: hl.Table, n_partitions: int = 100) -> hl.Table:
                                               oe_mis=hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants)
                                               )
 
+    # TODO: Aggregate to fix XG problem
     pphen_mis_ht = po_ht.filter(po_ht.modifier == 'probably_damaging').key_by(*keys).drop('modifier', 'annotation')
     pphen_mis_ht = pphen_mis_ht.transmute(obs_mis_pphen=pphen_mis_ht.variant_count,
                                           exp_mis_pphen=pphen_mis_ht.expected_variants,
                                           oe_mis_pphen=pphen_mis_ht.variant_count / pphen_mis_ht.expected_variants)
 
     # TODO: change this to aggregate to get the non-None ones?
+    # TODO: Aggregate to fix XG problem
     syn_ht = po_ht.filter((po_ht.annotation == 'synonymous_variant') & (po_ht.modifier == 'None')).key_by(*keys).drop('modifier', 'annotation')
     syn_ht = syn_ht.transmute(obs_syn=syn_ht.variant_count, exp_syn=syn_ht.expected_variants,
                               oe_mis_syn=syn_ht.variant_count / syn_ht.expected_variants)
