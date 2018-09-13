@@ -176,7 +176,7 @@ def filter_vep(t: Union[hl.MatrixTable, hl.Table],
 
 
 def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True) -> Union[hl.Table, hl.MatrixTable]:
-    transcript_csqs = t[vep_root].transcript_consequences.map(add_most_severe_consequence_to_consequence)
+    transcript_csqs = t[vep_root].transcript_consequences
     criteria = [lambda csq: True]
     if syn: criteria.append(lambda csq: csq.most_severe_consequence == "synonymous_variant")
     if canonical: criteria.append(lambda csq: csq.canonical == 1)

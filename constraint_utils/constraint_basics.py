@@ -293,6 +293,9 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
                                         recompute_possible: bool = False, remove_from_denominator: bool = True,
                                         remove_filtered: bool = True, remove_ac0: bool = False) -> hl.Table:
 
+    exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
+    context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
+
     context_ht = fast_filter_vep(context_ht).select_rows('context', 'ref', 'alt', 'methylation_level', 'exome_coverage')
     context_ht = context_ht.filter_rows(hl.is_defined(context_ht.exome_coverage))
 
@@ -362,23 +365,34 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     return coverage_model, plateau_models
 
 
+def add_most_severe_csq_to_tc_within_ht(ht):
+    return ht.annotate(vep=ht.vep.annotate(transcript_consequences=ht.vep.transcript_consequences.map(
+        add_most_severe_consequence_to_consequence))
+    )
+
+
+def take_one_annotation_from_tc_within_ht(ht):
+    return ht.annotate_rows(
+        vep=ht.vep.annotate(transcript_consequences=ht.vep.transcript_consequences[0]))
+
+
 def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
                             plateau_models: Dict[str, Tuple[float, float]], coverage_model: Tuple[float, float],
-                            confirm_model_only: bool = False,
-                            recompute_possible: bool = False, remove_from_denominator: bool = True) -> hl.Table:
+                            confirm_model_only: bool = False, recompute_possible: bool = False,
+                            remove_from_denominator: bool = True, custom_model: str = None) -> hl.Table:
 
-    context_ht = fast_filter_vep(context_ht, syn=confirm_model_only, canonical=confirm_model_only)
-    exome_ht = fast_filter_vep(exome_ht, syn=confirm_model_only, canonical=confirm_model_only)
+    exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
+    context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
 
     if confirm_model_only:
-        context_ht = context_ht.annotate_rows(vep=context_ht.vep.annotate(transcript_consequences=context_ht.vep.transcript_consequences[0]))
-        exome_ht = exome_ht.annotate_rows(vep=exome_ht.vep.annotate(transcript_consequences=exome_ht.vep.transcript_consequences[0]))
+        context_ht = take_one_annotation_from_tc_within_ht(fast_filter_vep(context_ht))
+        exome_ht = take_one_annotation_from_tc_within_ht(fast_filter_vep(exome_ht))
     else:
         context_ht = context_ht.explode_rows(context_ht.vep.transcript_consequences)
         exome_ht = exome_ht.explode_rows(exome_ht.vep.transcript_consequences)
 
-    context_ht, _ = annotate_constraint_groupings(context_ht)
-    exome_ht, grouping = annotate_constraint_groupings(exome_ht)
+    context_ht, _ = annotate_constraint_groupings(context_ht, custom_model=custom_model)
+    exome_ht, grouping = annotate_constraint_groupings(exome_ht, custom_model=custom_model)
 
     context_ht = context_ht.filter_rows(hl.is_defined(context_ht.exome_coverage)).select_rows(
         'context', 'ref', 'alt', 'methylation_level', *grouping)
@@ -490,20 +504,42 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str]) -> hl.Table:
         oe_lof=lof_ht.obs_lof / lof_ht.exp_lof).key_by(*keys)
 
 
-def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable]) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
-    groupings = {
-        'annotation': ht.vep.transcript_consequences.most_severe_consequence,
-        'modifier': hl.case()
-            .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
-                  ht.vep.transcript_consequences.polyphen_prediction)
-            .when(hl.is_defined(ht.vep.transcript_consequences.lof),
-                  ht.vep.transcript_consequences.lof)
-            .default('None'),
-        'transcript': ht.vep.transcript_consequences.transcript_id,
-        'gene': ht.vep.transcript_consequences.gene_symbol,
-        'canonical': hl.or_else(ht.vep.transcript_consequences.canonical == 1, False),
-        'coverage': ht.exome_coverage
-    }
+def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
+                                  custom_model: str = None) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
+    """
+    Assumes HT is exploded along vep.transcript_consequences
+
+    Need to add `'coverage': ht.exome_coverage` here (which will get corrected out later)
+    """
+    if custom_model is None:
+        groupings = {
+            'annotation': ht.vep.transcript_consequences.most_severe_consequence,
+            'modifier': hl.case()
+                .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
+                      ht.vep.transcript_consequences.polyphen_prediction)
+                .when(hl.is_defined(ht.vep.transcript_consequences.lof),
+                      ht.vep.transcript_consequences.lof)
+                .default('None'),
+            'transcript': ht.vep.transcript_consequences.transcript_id,
+            'gene': ht.vep.transcript_consequences.gene_symbol,
+            'canonical': hl.or_else(ht.vep.transcript_consequences.canonical == 1, False),
+            'coverage': ht.exome_coverage
+        }
+    elif custom_model == 'worst_csq':
+        ht = process_consequences(ht)
+        groupings = {
+            'annotation': ht.vep.transcript_consequences.most_severe_consequence,
+            'modifier': hl.case()
+                .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
+                      ht.vep.transcript_consequences.polyphen_prediction)
+                .when(hl.is_defined(ht.vep.transcript_consequences.lof),
+                      ht.vep.transcript_consequences.lof)
+                .default('None'),
+            'gene': ht.vep.transcript_consequences.gene_symbol,
+            'coverage': ht.exome_coverage
+        }
+    else:
+        raise ValueError('custom_model must be "worst_csq" or None')
     ht = ht.annotate(**groupings) if isinstance(ht, hl.Table) else ht.annotate_rows(**groupings)
     return ht, list(groupings.keys())
 
