@@ -21,11 +21,13 @@ split_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/context_processe
 processed_genomes_ht_path = f'{root}/genomes_processed.mt'
 processed_exomes_ht_path = f'{root}/exomes_processed.mt'
 
-mutation_rate_ht_path = f'{root}/exploratory/mutation_rate_methylation_bins.ht'
-po_coverage_ht_path = f'{root}/exploratory/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
-po_ht_path = f'{root}/standard/prop_observed.ht'
-po_syn_ht_path = f'{root}/standard/prop_observed_syn.ht'
-constraint_ht_path = f'{root}/standard/constraint.ht'
+# location = 'standard'
+location = 'weighted'
+mutation_rate_ht_path = f'{root}/standard/mutation_rate_methylation_bins.ht'
+po_coverage_ht_path = f'{root}/standard/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
+po_ht_path = f'{root}/{location}/prop_observed.ht'
+po_syn_ht_path = f'{root}/{location}/prop_observed_syn.ht'
+constraint_ht_path = f'{root}/{location}/constraint.ht'
 
 HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')

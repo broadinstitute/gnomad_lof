@@ -67,9 +67,9 @@ def main(args):
     coverage_x_ht = hl.read_table(po_coverage_ht_path.replace('.ht', '_x.ht'))
     coverage_y_ht = hl.read_table(po_coverage_ht_path.replace('.ht', '_y.ht'))
 
-    coverage_model, plateau_models = build_models(coverage_ht, args.trimers)
-    _, plateau_x_models = build_models(coverage_x_ht, args.trimers)
-    _, plateau_y_models = build_models(coverage_y_ht, args.trimers)
+    coverage_model, plateau_models = build_models(coverage_ht, args.trimers, True)
+    _, plateau_x_models = build_models(coverage_x_ht, args.trimers, True)
+    _, plateau_y_models = build_models(coverage_y_ht, args.trimers, True)
 
     if args.confirm_model:
         get_proportion_observed(exome_ht, context_ht, mutation_ht,
