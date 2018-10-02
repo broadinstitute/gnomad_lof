@@ -16,8 +16,7 @@ all_possible_summary_pickle = 'gs://konradk/tmp/all_possible_counts_by_context.p
 all_possible_summary_unfiltered_pickle = 'gs://gnomad-resources/constraint/hail-0.2/exploratory/all_possible_counts_by_context_unfiltered.pckl'
 
 # Input datasets
-context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only_20180907.mt'
-split_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/context_processed.mt'
+unsplit_context_mt_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only_20180907.mt'
 processed_genomes_ht_path = f'{root}/genomes_processed.mt'
 processed_exomes_ht_path = f'{root}/exomes_processed.mt'
 
@@ -26,7 +25,6 @@ location = 'weighted'
 mutation_rate_ht_path = f'{root}/standard/mutation_rate_methylation_bins.ht'
 po_coverage_ht_path = f'{root}/standard/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
 po_ht_path = f'{root}/{location}/prop_observed.ht'
-po_syn_ht_path = f'{root}/{location}/prop_observed_syn.ht'
 constraint_ht_path = f'{root}/{location}/constraint.ht'
 
 HIGH_COVERAGE_CUTOFF = 40
@@ -93,9 +91,9 @@ def import_fasta() -> None:
                                     )), variant_class=hl.tstr
                                 )}
     ).rename({'f0': 'v', 'f1': 'context', 'f2': 'vep'})
-    ht.transmute(**hl.parse_variant(ht.v)).key_by('locus', 'alleles').write(context_mt_path)
+    ht.transmute(**hl.parse_variant(ht.v)).key_by('locus', 'alleles').write(unsplit_context_mt_path)
     # ht = ht.transmute(**hl.parse_variant(ht.v)).key_by('locus', 'alleles')
-    # hl.MatrixTable.from_rows_table(ht, partition_key='locus').write(context_mt_path)
+    # hl.MatrixTable.from_rows_table(ht).write(unsplit_context_mt_path)
 
 
 def split_context_mt(raw_context_mt_path: str, coverage_ht_paths: Dict[str, str], methylation_ht_path: str,
@@ -128,7 +126,7 @@ def vep_context_mt():
     print('Done! Combining...')
     hts = [hl.read_matrix_table(f'gs://gnomad-resources/context/hail-0.2/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.mt') for i in chunks]
     ht = hts[0].union_rows(*hts[1:])
-    ht.write(context_mt_path, True)
+    ht.write(unsplit_context_mt_path, True)
 
 
 def pre_process_data(ht_path: str, rf_path: str, split_context_mt_path: str,
@@ -168,8 +166,7 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
     }
     if annotate_coverage:
         # coverage_binning = 100
-        coverage_binning = 1
-        annotation['exome_coverage'] = hl.int(ht.coverage.exomes.median * coverage_binning) / coverage_binning
+        annotation['exome_coverage'] = ht.coverage.exomes.median
         # hl.int(ht.coverage.exomes.over_20 * coverage_binning) / coverage_binning
     return ht.annotate(**annotation) if isinstance(ht, hl.Table) else ht.annotate_rows(**annotation)
 
@@ -365,28 +362,33 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     return coverage_model, plateau_models
 
 
-def add_most_severe_csq_to_tc_within_ht(ht):
-    return ht.annotate(vep=ht.vep.annotate(transcript_consequences=ht.vep.transcript_consequences.map(
+def add_most_severe_csq_to_tc_within_ht(t):
+    annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences.map(
         add_most_severe_consequence_to_consequence))
-    )
+    return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
 
 
-def take_one_annotation_from_tc_within_ht(ht):
-    return ht.annotate_rows(
-        vep=ht.vep.annotate(transcript_consequences=ht.vep.transcript_consequences[0]))
+def take_one_annotation_from_tc_within_ht(t):
+    annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences[0])
+    return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
 
 
 def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
                             plateau_models: Dict[str, Tuple[float, float]], coverage_model: Tuple[float, float],
-                            confirm_model_only: bool = False, recompute_possible: bool = False,
+                            recompute_possible: bool = False,
                             remove_from_denominator: bool = True, custom_model: str = None) -> hl.Table:
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
 
-    if confirm_model_only:
+    if custom_model == 'syn_canonical':
         context_ht = take_one_annotation_from_tc_within_ht(fast_filter_vep(context_ht))
         exome_ht = take_one_annotation_from_tc_within_ht(fast_filter_vep(exome_ht))
+    elif custom_model == 'worst_csq':
+        context_ht = process_consequences(context_ht)
+        context_ht = context_ht.explode_rows(context_ht.vep.worst_csq_by_gene)
+        exome_ht = process_consequences(exome_ht)
+        exome_ht = exome_ht.explode_rows(exome_ht.vep.worst_csq_by_gene)
     else:
         context_ht = context_ht.explode_rows(context_ht.vep.transcript_consequences)
         exome_ht = exome_ht.explode_rows(exome_ht.vep.transcript_consequences)
@@ -414,7 +416,7 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
     exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.coverage > 0), 'above', allele_count=0)
     exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.pass_filters), 'below', frequency=af_cutoff).rows()
 
-    possible_file = f'gs://konradk/tmp/possible_transcript{"_syn" if confirm_model_only else ""}.ht'
+    possible_file = f'{root}/{location}/possible_data/possible_transcript_{custom_model}.ht'
     if recompute_possible:
         ht = count_variants(context_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)
         ht = annotate_with_mu(ht, mutation_ht)
@@ -432,8 +434,8 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
     possible_variants_ht = hl.read_table(possible_file)
     ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)  # , count_downsamplings=('global',))
     ht = ht.join(possible_variants_ht, 'outer')
-    ht.write('gs://konradk/tmp.ht', True)
-    ht = hl.read_table('gs://konradk/tmp.ht')
+    ht.write(f'{root}/{location}/possible_data/all_data_transcript_{custom_model}.ht', True)
+    ht = hl.read_table(f'{root}/{location}/possible_data/all_data_transcript_{custom_model}.ht')
 
     grouping.remove('coverage')
     ht = ht.group_by(*grouping).partition_hint(1000).aggregate(variant_count=hl.agg.sum(ht.variant_count),
@@ -443,8 +445,9 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
     return ht.annotate(obs_exp=ht.variant_count / ht.expected_variants)
 
 
-def finalize_dataset(po_ht: hl.Table, n_partitions: int = 100) -> hl.Table:
-    keys = ('transcript', 'gene', 'canonical')
+def finalize_dataset(po_ht: hl.Table, skip_transcript: bool = False, n_partitions: int = 100) -> hl.Table:
+    keys = ['gene']
+    if not skip_transcript: keys.extend(['transcript', 'canonical'])
     po_ht = po_ht.repartition(n_partitions).persist()
 
     # Getting classic LoF annotations (no LOFTEE)
@@ -507,11 +510,23 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str]) -> hl.Table:
 def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
                                   custom_model: str = None) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
     """
-    Assumes HT is exploded along vep.transcript_consequences
+    HT must be exploded against whatever axis
 
     Need to add `'coverage': ht.exome_coverage` here (which will get corrected out later)
     """
-    if custom_model is None:
+    if custom_model == 'worst_csq':
+        groupings = {
+            'annotation': ht.vep.worst_csq_by_gene.most_severe_consequence,
+            'modifier': hl.case()
+                .when(hl.is_defined(ht.vep.worst_csq_by_gene.polyphen_prediction),
+                      ht.vep.worst_csq_by_gene.polyphen_prediction)
+                .when(hl.is_defined(ht.vep.worst_csq_by_gene.lof),
+                      ht.vep.worst_csq_by_gene.lof)
+                .default('None'),
+            'gene': ht.vep.worst_csq_by_gene.gene_symbol,
+            'coverage': ht.exome_coverage
+        }
+    else:
         groupings = {
             'annotation': ht.vep.transcript_consequences.most_severe_consequence,
             'modifier': hl.case()
@@ -525,21 +540,8 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
             'canonical': hl.or_else(ht.vep.transcript_consequences.canonical == 1, False),
             'coverage': ht.exome_coverage
         }
-    elif custom_model == 'worst_csq':
-        ht = process_consequences(ht)
-        groupings = {
-            'annotation': ht.vep.transcript_consequences.most_severe_consequence,
-            'modifier': hl.case()
-                .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
-                      ht.vep.transcript_consequences.polyphen_prediction)
-                .when(hl.is_defined(ht.vep.transcript_consequences.lof),
-                      ht.vep.transcript_consequences.lof)
-                .default('None'),
-            'gene': ht.vep.transcript_consequences.gene_symbol,
-            'coverage': ht.exome_coverage
-        }
-    else:
-        raise ValueError('custom_model must be "worst_csq" or None')
+        if custom_model == 'splice_region':
+            groupings['distance_splice'] = ht.vep.transcript_consequences
     ht = ht.annotate(**groupings) if isinstance(ht, hl.Table) else ht.annotate_rows(**groupings)
     return ht, list(groupings.keys())
 
@@ -556,6 +558,7 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
     """
     Calibrates high coverage model (returns intercept and slope)
     """
+    # TODO: try square weighting
     return ht.aggregate(hl.agg.group_by(ht.cpg,
                                         hl.agg.linreg(ht.high_coverage_proportion_observed, [1, ht.mu_snp],
                                                       weight=ht.possible_variants if weighted else None)

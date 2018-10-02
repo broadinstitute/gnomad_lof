@@ -11,14 +11,14 @@ def main(args):
     if args.pre_process_data:
         # import_fasta()
         # vep_context_mt()
-        # split_context_mt(context_mt_path, {'exomes': coverage_ht_path('exomes'), 'genomes': coverage_ht_path('genomes')},
-        #                  methylation_sites_mt_path(), split_context_mt_path, args.overwrite)
+        # split_context_mt(unsplit_context_mt_path, {'exomes': coverage_ht_path('exomes'), 'genomes': coverage_ht_path('genomes')},
+        #                  methylation_sites_mt_path(), context_mt_path, args.overwrite)
         pre_process_data(annotations_ht_path('genomes', 'frequencies'), annotations_ht_path('genomes', 'rf'),
-                         split_context_mt_path, processed_genomes_ht_path, args.overwrite)
+                         context_mt_path, processed_genomes_ht_path, args.overwrite)
         pre_process_data(annotations_ht_path('exomes', 'frequencies'), annotations_ht_path('exomes', 'rf'),
-                         split_context_mt_path, processed_exomes_ht_path, args.overwrite)
+                         context_mt_path, processed_exomes_ht_path, args.overwrite)
 
-    full_context_ht = prepare_ht(hl.read_matrix_table(split_context_mt_path), args.trimers)  # .rows()
+    full_context_ht = prepare_ht(hl.read_matrix_table(context_mt_path), args.trimers)  # .rows()
     full_genome_ht = prepare_ht(hl.read_matrix_table(processed_genomes_ht_path), args.trimers)
     full_exome_ht = prepare_ht(hl.read_matrix_table(processed_exomes_ht_path), args.trimers)
 
@@ -50,7 +50,7 @@ def main(args):
     exome_y_ht = hl.filter_intervals(full_exome_ht, [hl.parse_locus_interval('Y')])
     exome_y_ht = exome_y_ht.filter_rows(exome_y_ht.locus.in_y_nonpar())
 
-    if args.get_mu_coverage:
+    if args.build_model:
         coverage_ht = get_proportion_observed_by_coverage(exome_ht, context_ht, mutation_ht, True)
         annotate_variant_types(coverage_ht).write(po_coverage_ht_path, overwrite=args.overwrite)
 
@@ -71,43 +71,34 @@ def main(args):
     _, plateau_x_models = build_models(coverage_x_ht, args.trimers, True)
     _, plateau_y_models = build_models(coverage_y_ht, args.trimers, True)
 
-    if args.confirm_model:
-        get_proportion_observed(exome_ht, context_ht, mutation_ht,
-                                plateau_models, coverage_model, recompute_possible=True,
-                                confirm_model_only=True).write(po_syn_ht_path, overwrite=args.overwrite)
-        hl.read_table(po_syn_ht_path).export(po_syn_ht_path.replace('.ht', '.txt.bgz'))
-
-        get_proportion_observed(exome_x_ht, context_x_ht, mutation_ht,
-                                plateau_x_models, coverage_model, recompute_possible=True,
-                                confirm_model_only=True).write(po_syn_ht_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
-        hl.read_table(po_syn_ht_path.replace('.ht', '_x.ht')).export(po_syn_ht_path.replace('.ht', '_x.txt.bgz'))
-
-        get_proportion_observed(exome_y_ht, context_y_ht, mutation_ht,
-                                plateau_y_models, coverage_model, recompute_possible=True,
-                                confirm_model_only=True).write(po_syn_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
-        hl.read_table(po_syn_ht_path.replace('.ht', '_y.ht')).export(po_syn_ht_path.replace('.ht', '_y.txt.bgz'))
-
-    if args.build_full_model:
+    po_output_path = po_ht_path.replace('.ht', f'_{args.model}.ht')
+    output_path = constraint_ht_path.replace('.ht', f'_{args.model}.ht')
+    if args.apply_model:
         get_proportion_observed(exome_ht, context_ht, mutation_ht, plateau_models,
-                                coverage_model, recompute_possible=True).write(po_ht_path, overwrite=args.overwrite)
-        hl.read_table(po_ht_path).export(po_ht_path.replace('.ht', '.txt.bgz'))
+                                coverage_model, recompute_possible=True,
+                                custom_model=args.model).write(po_output_path, overwrite=args.overwrite)
+        hl.read_table(po_output_path).export(po_output_path.replace('.ht', '.txt.bgz'))
 
         get_proportion_observed(exome_x_ht, context_x_ht, mutation_ht, plateau_x_models,
-                                coverage_model, recompute_possible=True).write(po_ht_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
-        hl.read_table(po_ht_path.replace('.ht', '_x.ht')).export(po_ht_path.replace('.ht', '_x.txt.bgz'))
+                                coverage_model, recompute_possible=True,
+                                custom_model=args.model).write(po_output_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
+        hl.read_table(po_output_path.replace('.ht', '_x.ht')).export(po_output_path.replace('.ht', '_x.txt.bgz'))
 
         get_proportion_observed(exome_y_ht, context_y_ht, mutation_ht, plateau_y_models,
-                                coverage_model, recompute_possible=True).write(po_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
-        hl.read_table(po_ht_path.replace('.ht', '_y.ht')).export(po_ht_path.replace('.ht', '_y.txt.bgz'))
+                                coverage_model, recompute_possible=True,
+                                custom_model=args.model).write(po_output_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
+        hl.read_table(po_output_path.replace('.ht', '_y.ht')).export(po_output_path.replace('.ht', '_y.txt.bgz'))
 
     if args.finalize:
-        ht = hl.read_table(po_ht_path).union(
-            hl.read_table(po_ht_path.replace('.ht', '_x.ht'))
+        ht = hl.read_table(po_output_path).union(
+            hl.read_table(po_output_path.replace('.ht', '_x.ht'))
         ).union(
-            hl.read_table(po_ht_path.replace('.ht', '_y.ht'))
+            hl.read_table(po_output_path.replace('.ht', '_y.ht'))
         )
-        finalize_dataset(ht).write(constraint_ht_path, args.overwrite)
-        hl.read_table(constraint_ht_path).export(constraint_ht_path.replace('.ht', '.txt.bgz'))
+        if args.model != 'syn_canonical':
+            ht = finalize_dataset(ht, skip_transcript=args.model == 'worst_csq')
+        ht.write(output_path, args.overwrite)
+        hl.read_table(output_path).export(output_path.replace('.ht', '.txt.bgz'))
 
 
 if __name__ == '__main__':
@@ -117,10 +108,10 @@ if __name__ == '__main__':
     parser.add_argument('--trimers', help='Use trimers instead of heptamers', action='store_true')
     parser.add_argument('--pre_process_data', help='Pre-process data', action='store_true')
     parser.add_argument('--calculate_mutation_rate', help='Calculate mutation rate', action='store_true')
-    parser.add_argument('--get_mu_coverage', help='Calculate proportion observed by mu by coverage', action='store_true')
-    parser.add_argument('--confirm_model', help='Confirm model on synonymous variants on canonical transcripts', action='store_true')
-    parser.add_argument('--build_full_model', help='Apply model to all transcripts and variant types', action='store_true')
-    parser.add_argument('--finalize', help='Combine autosomes, X, Y, and calculate final metrics', action='store_true')
+    parser.add_argument('--build_model', help='Calculate proportion observed by mu by coverage', action='store_true')
+    parser.add_argument('--apply_model', help='Apply constraint model', action='store_true')
+    parser.add_argument('--model', help='Which model to apply (one of "standard", "syn_canonical", or "worst_csq" for now)')
+    parser.add_argument('--finalize', help='Combine autosomes, X, Y, and finalize', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
     args = parser.parse_args()
 
