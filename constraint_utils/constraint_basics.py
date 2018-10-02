@@ -287,8 +287,7 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
 
 
 def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
-                                        recompute_possible: bool = False, remove_from_denominator: bool = True,
-                                        remove_filtered: bool = True, remove_ac0: bool = False) -> hl.Table:
+                                        recompute_possible: bool = False) -> hl.Table:
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -302,20 +301,12 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
     af_cutoff = 0.001
 
     exome_join = exome_ht[context_ht.row_key, :]
-    keep_criteria = True
-    if remove_from_denominator:
-        keep_criteria &= hl.any(lambda f: (f.AF[1] <= af_cutoff) &  # (f.AF[1] > 0) &
-                                          (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
-                                exome_join.freq)
-    if remove_filtered:
-        keep_criteria &= exome_join.pass_filters
+    keep_criteria = hl.any(lambda f: (f.AF[1] <= af_cutoff) &  # (f.AF[1] > 0) &
+                                     (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
+                           exome_join.freq) & exome_join.pass_filters
     context_ht = context_ht.filter_rows(hl.is_missing(exome_join) | keep_criteria).rows()
 
-    if remove_filtered:
-        exome_ht = exome_ht.filter_rows(exome_ht.pass_filters)
-
-    if remove_ac0:
-        exome_ht = filter_by_frequency(exome_ht, 'above', allele_count=0)
+    exome_ht = exome_ht.filter_rows(exome_ht.pass_filters)
     exome_ht = filter_by_frequency(exome_ht, 'below', frequency=af_cutoff).rows()
 
     possible_file = 'gs://konradk/tmp/possible_coverage.ht'
