@@ -29,6 +29,7 @@ constraint_ht_path = f'{root}/{location}/constraint.ht'
 
 HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')
+POPS = ('global', 'afr', 'amr', 'eas', 'nfe', 'sas')
 
 
 # Data loads
@@ -313,7 +314,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
         possible_ht.transmute(possible_variants=possible_ht.variant_count).write(possible_file, True)
 
     possible_ht = hl.read_table(possible_file)
-    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=('global',))
+    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=POPS)
     ht = ht.join(possible_ht, 'outer')
     return ht
 
@@ -322,17 +323,16 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
     all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= HIGH_COVERAGE_CUTOFF)
-    high_coverage_ht = all_high_coverage_ht.group_by(*keys).aggregate(
-        observed_variants=hl.agg.sum(all_high_coverage_ht.variant_count),
-        possible_variants=hl.agg.sum(all_high_coverage_ht.possible_variants))
+    agg_expr = {
+        'observed_variants': hl.agg.sum(all_high_coverage_ht.variant_count),
+        'possible_variants': hl.agg.sum(all_high_coverage_ht.possible_variants)
+    }
+    for pop in POPS:
+        agg_expr[f'observed_{pop}'] = hl.agg.array_sum(all_high_coverage_ht[f'downsampling_counts_{pop}'])
+    high_coverage_ht = all_high_coverage_ht.group_by(*keys).aggregate(**agg_expr)
 
-    plateau_models = build_plateau_models(
-        annotate_variant_types(
-            high_coverage_ht.annotate(
-                high_coverage_proportion_observed=high_coverage_ht.observed_variants / high_coverage_ht.possible_variants
-            ), not trimers),
-        weighted=weighted
-    )
+    high_coverage_ht = annotate_variant_types(high_coverage_ht, not trimers)
+    plateau_models = build_plateau_models_pop(high_coverage_ht, weighted=weighted)
 
     high_coverage_scale_factor = all_high_coverage_ht.aggregate(
         hl.agg.sum(all_high_coverage_ht.variant_count) /
@@ -404,36 +404,57 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
     exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.coverage > 0), 'above', allele_count=0)
     exome_ht = filter_by_frequency(exome_ht.filter_rows(exome_ht.pass_filters), 'below', frequency=af_cutoff).rows()
 
-    possible_file = f'{root}/{location}/possible_data/possible_transcript_{custom_model}.ht'
+    possible_file = f'{root}/{location}/possible_data/possible_transcript_pop_{custom_model}.ht'
     if recompute_possible:
         ht = count_variants(context_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)
         ht = annotate_with_mu(ht, mutation_ht)
         ht = ht.transmute(possible_variants=ht.variant_count)
         ht = annotate_variant_types(ht.annotate(mu_agg=ht.mu_snp * ht.possible_variants))
-        model = hl.literal(plateau_models)[ht.cpg]
-        ht = ht.annotate(adjusted_mutation_rate=ht.mu_agg * model[1] + model[0],
-                         coverage_correction=hl.case()
-                         .when(ht.coverage == 0, 0)
-                         .when(ht.coverage >= HIGH_COVERAGE_CUTOFF, 1)
-                         .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0]))
-        ht = ht.annotate(expected_variants=ht.adjusted_mutation_rate * ht.coverage_correction)
+        model = hl.literal(plateau_models.total)[ht.cpg]
+        ann_expr = {
+            'adjusted_mutation_rate': ht.mu_agg * model[1] + model[0],
+            'coverage_correction': hl.case()
+                .when(ht.coverage == 0, 0)
+                .when(ht.coverage >= HIGH_COVERAGE_CUTOFF, 1)
+                .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
+        }
+        for pop in POPS:
+            pop_model = hl.literal(plateau_models[pop])
+            slopes = hl.map(lambda f: f[ht.cpg][1], pop_model)
+            intercepts = hl.map(lambda f: f[ht.cpg][0], pop_model)
+            ann_expr[f'adjusted_mutation_rate_{pop}'] = ht.mu_agg * slopes + intercepts
+        ht = ht.annotate(**ann_expr)
+        ann_expr = {
+            'expected_variants': ht.adjusted_mutation_rate * ht.coverage_correction
+        }
+        for pop in POPS:
+            ann_expr[f'expected_variants_{pop}'] = ht[f'adjusted_mutation_rate_{pop}'] * ht.coverage_correction
+        ht = ht.annotate(**ann_expr)
         ht.write(possible_file, True)
 
     possible_variants_ht = hl.read_table(possible_file)
-    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)  # , count_downsamplings=('global',))
+    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True, count_downsamplings=POPS)
     ht = ht.join(possible_variants_ht, 'outer')
-    ht.write(f'{root}/{location}/possible_data/all_data_transcript_{custom_model}.ht', True)
-    ht = hl.read_table(f'{root}/{location}/possible_data/all_data_transcript_{custom_model}.ht')
+    ht.write(f'{root}/{location}/possible_data/all_data_transcript_pop_{custom_model}.ht', True)
+    ht = hl.read_table(f'{root}/{location}/possible_data/all_data_transcript_pop_{custom_model}.ht')
 
     grouping.remove('coverage')
-    ht = ht.group_by(*grouping).partition_hint(1000).aggregate(variant_count=hl.agg.sum(ht.variant_count),
-                                                               adjusted_mutation_rate=hl.agg.sum(ht.adjusted_mutation_rate),
-                                                               possible_variants=hl.agg.sum(ht.possible_variants),
-                                                               expected_variants=hl.agg.sum(ht.expected_variants))
+    agg_expr = {
+        'variant_count': hl.agg.sum(ht.variant_count),
+        'adjusted_mutation_rate': hl.agg.sum(ht.adjusted_mutation_rate),
+        'possible_variants': hl.agg.sum(ht.possible_variants),
+        'expected_variants': hl.agg.sum(ht.expected_variants)
+    }
+    for pop in POPS:
+        agg_expr[f'adjusted_mutation_rate_{pop}'] = hl.agg.array_sum(ht[f'adjusted_mutation_rate_{pop}'])
+        agg_expr[f'expected_variants_{pop}'] = hl.agg.array_sum(ht[f'expected_variants_{pop}'])
+        agg_expr[f'downsampling_counts_{pop}'] = hl.agg.array_sum(ht[f'downsampling_counts_{pop}'])
+    ht = ht.group_by(*grouping).partition_hint(1000).aggregate(**agg_expr)
     return ht.annotate(obs_exp=ht.variant_count / ht.expected_variants)
 
 
 def finalize_dataset(po_ht: hl.Table, skip_transcript: bool = False, n_partitions: int = 100) -> hl.Table:
+    # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
     keys = ['gene']
     if not skip_transcript: keys.extend(['transcript', 'canonical'])
     po_ht = po_ht.repartition(n_partitions).persist()
@@ -442,54 +463,84 @@ def finalize_dataset(po_ht: hl.Table, skip_transcript: bool = False, n_partition
     classic_lof_annotations = hl.literal({'stop_gained', 'splice_donor_variant', 'splice_acceptor_variant'})
     lof_ht_classic = po_ht.filter(classic_lof_annotations.contains(po_ht.annotation) &
                                   ((po_ht.modifier == 'HC') | (po_ht.modifier == 'LC')))
-    lof_ht_classic = collapse_lof_ht(lof_ht_classic, keys)
+    lof_ht_classic = collapse_lof_ht(lof_ht_classic, keys, False)
     lof_ht_classic = lof_ht_classic.rename({x: f'{x}_classic' for x in list(lof_ht_classic.row_value)})
 
     # Getting classic LoF annotations (with LOFTEE)
     lof_ht_classic_hc = po_ht.filter(classic_lof_annotations.contains(po_ht.annotation) & (po_ht.modifier == 'HC'))
-    lof_ht_classic_hc = collapse_lof_ht(lof_ht_classic_hc, keys)
+    lof_ht_classic_hc = collapse_lof_ht(lof_ht_classic_hc, keys, False)
     lof_ht_classic_hc = lof_ht_classic_hc.rename({x: f'{x}_classic_hc' for x in list(lof_ht_classic_hc.row_value)})
 
     # TODO: assess diff of this and classic HC counts to view depletions
     # Getting all LoF annotations (LOFTEE HC + new splice variants)
     lof_ht = po_ht.filter(po_ht.modifier == 'HC')
     po_ht = po_ht.drop('possible_variants', 'adjusted_mutation_rate', 'obs_exp')
-    lof_ht = collapse_lof_ht(lof_ht, keys)
-    lof_ht = lof_ht.annotate(**oe_confidence_interval(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key])
+    lof_ht = collapse_lof_ht(lof_ht, keys, False)
+    # lof_ht = lof_ht.annotate(**oe_confidence_interval(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key])
 
     mis_ht = po_ht.filter(po_ht.annotation == 'missense_variant')
-    mis_ht = mis_ht.group_by(*keys).aggregate(obs_mis=hl.agg.sum(mis_ht.variant_count),
-                                              exp_mis=hl.agg.sum(mis_ht.expected_variants),
-                                              oe_mis=hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants)
-                                              )
+    agg_expr = {
+        'obs_mis': hl.agg.sum(mis_ht.variant_count),
+        'exp_mis': hl.agg.sum(mis_ht.expected_variants),
+        'oe_mis': hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants)
+    }
+    for pop in POPS:
+        agg_expr[f'exp_mis_{pop}'] = hl.agg.array_sum(mis_ht[f'expected_variants_{pop}'])
+        agg_expr[f'obs_mis_{pop}'] = hl.agg.array_sum(mis_ht[f'downsampling_counts_{pop}'])
+    mis_ht = mis_ht.group_by(*keys).aggregate(**agg_expr)
 
-    # TODO: Aggregate to fix XG problem
-    pphen_mis_ht = po_ht.filter(po_ht.modifier == 'probably_damaging').key_by(*keys).drop('modifier', 'annotation')
-    pphen_mis_ht = pphen_mis_ht.transmute(obs_mis_pphen=pphen_mis_ht.variant_count,
-                                          exp_mis_pphen=pphen_mis_ht.expected_variants,
-                                          oe_mis_pphen=pphen_mis_ht.variant_count / pphen_mis_ht.expected_variants)
-
-    # TODO: change this to aggregate to get the non-None ones?
-    # TODO: Aggregate to fix XG problem
-    syn_ht = po_ht.filter((po_ht.annotation == 'synonymous_variant') & (po_ht.modifier == 'None')).key_by(*keys).drop('modifier', 'annotation')
-    syn_ht = syn_ht.transmute(obs_syn=syn_ht.variant_count, exp_syn=syn_ht.expected_variants,
-                              oe_mis_syn=syn_ht.variant_count / syn_ht.expected_variants)
+    pphen_mis_ht = po_ht.filter(po_ht.modifier == 'probably_damaging')
+    pphen_mis_ht = pphen_mis_ht.group_by(*keys).aggregate(obs_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count),
+                                                          exp_mis_pphen=hl.agg.sum(pphen_mis_ht.expected_variants),
+                                                          oe_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count) / hl.agg.sum(pphen_mis_ht.expected_variants))
+    syn_ht = po_ht.filter(po_ht.annotation == 'synonymous_variant').key_by(*keys)
+    agg_expr = {
+        'obs_syn': hl.agg.sum(syn_ht.variant_count),
+        'exp_syn': hl.agg.sum(syn_ht.expected_variants),
+        'oe_syn': hl.agg.sum(syn_ht.variant_count) / hl.agg.sum(syn_ht.expected_variants)
+    }
+    for pop in POPS:
+        agg_expr[f'exp_syn_{pop}'] = hl.agg.array_sum(syn_ht[f'expected_variants_{pop}'])
+        agg_expr[f'obs_syn_{pop}'] = hl.agg.array_sum(syn_ht[f'downsampling_counts_{pop}'])
+    syn_ht = syn_ht.group_by(*keys).aggregate(**agg_expr)
 
     ht = lof_ht_classic.annotate(**mis_ht[lof_ht_classic.key], **pphen_mis_ht[lof_ht_classic.key],
                                  **syn_ht[lof_ht_classic.key], **lof_ht[lof_ht_classic.key],
                                  **lof_ht_classic_hc[lof_ht_classic.key])
     ht = ht.annotate(**oe_confidence_interval(ht, ht.obs_lof_classic_hc, ht.exp_lof_classic_hc,
                                               prefix='oe_classic_hc')[ht.key])
-    return ht.annotate(**oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof)[ht.key])
+    return calculate_all_z_scores(ht)  # .annotate(**oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof)[ht.key])
 
 
-def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str]) -> hl.Table:
-    lof_ht = lof_ht.group_by(*keys).aggregate(obs_lof=hl.agg.sum(lof_ht.variant_count),
-                                              exp_lof=hl.agg.sum(lof_ht.expected_variants),
-                                              possible_lof=hl.agg.sum(lof_ht.possible_variants),
-                                              adjusted_mu_lof=hl.agg.sum(
-                                                  lof_ht.adjusted_mutation_rate)).persist()
+def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool = False) -> hl.Table:
+    agg_expr = {
+        'obs_lof': hl.agg.sum(lof_ht.variant_count),
+        'adjusted_mu_lof': hl.agg.sum(lof_ht.adjusted_mutation_rate),
+        'possible_lof': hl.agg.sum(lof_ht.possible_variants),
+        'exp_lof': hl.agg.sum(lof_ht.expected_variants)
+    }
+    for pop in POPS:
+        agg_expr[f'adjusted_mu_lof_{pop}'] = hl.agg.array_sum(lof_ht[f'adjusted_mutation_rate_{pop}'])
+        agg_expr[f'exp_lof_{pop}'] = hl.agg.array_sum(lof_ht[f'expected_variants_{pop}'])
+        agg_expr[f'obs_lof_{pop}'] = hl.agg.array_sum(lof_ht[f'downsampling_counts_{pop}'])
+    lof_ht = lof_ht.group_by(*keys).aggregate(**agg_expr).persist()
     lof_ht = lof_ht.filter(lof_ht.exp_lof > 0)
+    if calculate_pop_pLI:
+        pop_lengths = get_all_pop_lengths(lof_ht, 'obs_lof_')
+        print(pop_lengths)
+        for pop_length, pop in pop_lengths:
+            print(f'Calculating pLI for {pop}...')
+            plis = []
+            for i in range(8, pop_length):
+                print(i)
+                ht = lof_ht.filter(lof_ht[f'exp_lof_{pop}'][i] > 0)
+                pli_ht = pLI(ht, ht[f'obs_lof_{pop}'][i], ht[f'exp_lof_{pop}'][i])
+                plis.append(pli_ht[lof_ht.key])
+            lof_ht = lof_ht.annotate(**{
+                f'pLI_{pop}': [pli.pLI for pli in plis],
+                f'pRec_{pop}': [pli.pRec for pli in plis],
+                f'pNull_{pop}': [pli.pNull for pli in plis],
+            })
     return lof_ht.annotate(
         **pLI(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key],
         oe_lof=lof_ht.obs_lof / lof_ht.exp_lof).key_by(*keys)
@@ -506,10 +557,10 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
         groupings = {
             'annotation': ht.vep.worst_csq_by_gene.most_severe_consequence,
             'modifier': hl.case()
-                .when(hl.is_defined(ht.vep.worst_csq_by_gene.polyphen_prediction),
-                      ht.vep.worst_csq_by_gene.polyphen_prediction)
                 .when(hl.is_defined(ht.vep.worst_csq_by_gene.lof),
                       ht.vep.worst_csq_by_gene.lof)
+                .when(hl.is_defined(ht.vep.worst_csq_by_gene.polyphen_prediction),
+                      ht.vep.worst_csq_by_gene.polyphen_prediction)
                 .default('None'),
             'gene': ht.vep.worst_csq_by_gene.gene_symbol,
             'coverage': ht.exome_coverage
@@ -518,10 +569,10 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
         groupings = {
             'annotation': ht.vep.transcript_consequences.most_severe_consequence,
             'modifier': hl.case()
-                .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
-                      ht.vep.transcript_consequences.polyphen_prediction)
                 .when(hl.is_defined(ht.vep.transcript_consequences.lof),
                       ht.vep.transcript_consequences.lof)
+                .when(hl.is_defined(ht.vep.transcript_consequences.polyphen_prediction),
+                      ht.vep.transcript_consequences.polyphen_prediction)
                 .default('None'),
             'transcript': ht.vep.transcript_consequences.transcript_id,
             'gene': ht.vep.transcript_consequences.gene_symbol,
@@ -547,10 +598,38 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
     Calibrates high coverage model (returns intercept and slope)
     """
     # TODO: try square weighting
+    ht = ht.annotate(high_coverage_proportion_observed=ht.observed_variants / ht.possible_variants)
     return ht.aggregate(hl.agg.group_by(ht.cpg,
                                         hl.agg.linreg(ht.high_coverage_proportion_observed, [1, ht.mu_snp],
                                                       weight=ht.possible_variants if weighted else None)
                                        ).map_values(lambda x: x.beta))
+
+
+def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
+    """
+    Calibrates high coverage model (returns intercept and slope)
+    """
+    pop_lengths = get_all_pop_lengths(ht)
+    agg_expr = {
+        pop: [hl.agg.group_by(ht.cpg,
+                             hl.agg.linreg(ht[f'observed_{pop}'][i] / ht.possible_variants, [1, ht.mu_snp],
+                                           weight=ht.possible_variants if weighted else None)
+                             ).map_values(lambda x: x.beta) for i in range(length)]
+        for length, pop in pop_lengths
+    }
+    agg_expr['total'] = hl.agg.group_by(ht.cpg,
+                                        hl.agg.linreg(ht.observed_variants / ht.possible_variants, [1, ht.mu_snp],
+                                                      weight=ht.possible_variants if weighted else None)
+                                        ).map_values(lambda x: x.beta)
+    return ht.aggregate(hl.struct(**agg_expr))
+
+
+def get_all_pop_lengths(ht, prefix: str = 'observed_', pops: List[str] = POPS):
+    ds_lengths = ht.aggregate([hl.agg.min(hl.len(ht[f'{prefix}{pop}'])) for pop in pops])
+    pop_lengths = list(zip(ds_lengths, pops))
+    print('Found: ', pop_lengths)
+    assert ht.all(hl.all(lambda f: f, [hl.len(ht[f'{prefix}{pop}']) == length for length, pop in pop_lengths]))
+    return pop_lengths
 
 
 # Plotting
@@ -604,7 +683,7 @@ def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.e
         upper_idx=hl.argmin(oe_ht.norm_dpois.map(lambda x: hl.or_missing(x > 1 - alpha, x)))
     )
     return oe_ht.select(**{
-        f'{prefix}_lower': oe_ht.range[oe_ht.lower_idx],
+        f'{prefix}_lower': hl.cond(oe_ht._obs > 0, oe_ht.range[oe_ht.lower_idx], 0),
         f'{prefix}_upper': oe_ht.range[oe_ht.upper_idx]
     })
 
