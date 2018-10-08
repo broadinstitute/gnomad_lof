@@ -45,7 +45,7 @@ def count_variants(ht: hl.Table,
                    count_singletons: bool = False, count_downsamplings: Optional[List[str]] = (),
                    additional_grouping: Optional[List[str]] = (), partition_hint: int = 100,
                    omit_methylation: bool = False, return_type_only: bool = False,
-                   force_grouping: bool = False) -> Union[hl.Table, Any]:
+                   force_grouping: bool = False, singleton_expression: hl.expr.BooleanExpression = None) -> Union[hl.Table, Any]:
     """
     Count variants by context, ref, alt, methylation_level
     """
@@ -58,7 +58,8 @@ def count_variants(ht: hl.Table,
 
     if count_singletons:
         # singleton = hl.any(lambda f: (f.meta.size() == 1) & (f.meta.get('group') == 'adj') & (f.AC[1] == 1), ht.freq)
-        singleton = ht.freq[0].AC[1] == 1
+        if singleton_expression is None:
+            singleton_expression = ht.freq[0].AC == 1
 
     if count_downsamplings or force_grouping:
         # Slower, but more flexible (allows for downsampling agg's)
@@ -66,14 +67,14 @@ def count_variants(ht: hl.Table,
         for pop in count_downsamplings:
             output[f'downsampling_counts_{pop}'] = downsampling_counts_expr(ht, pop)
         if count_singletons:
-            output['singleton_count'] = hl.agg.count_where(singleton)
+            output['singleton_count'] = hl.agg.count_where(singleton_expression)
             for pop in count_downsamplings:
                 output[f'singleton_downsampling_counts_{pop}'] = downsampling_counts_expr(ht, pop, singleton=True)
         return ht.group_by(**grouping)._set_buffer_size(1000).partition_hint(partition_hint).aggregate(**output)
     else:
         agg = {'variant_count': hl.agg.counter(grouping)}
         if count_singletons:
-            agg['singleton_count'] = hl.agg.counter(hl.agg.filter(singleton, grouping))
+            agg['singleton_count'] = hl.agg.counter(hl.agg.filter(singleton_expression, grouping))
 
         if return_type_only:
             return agg['variant_count'].dtype
@@ -228,8 +229,10 @@ def maps_old_model(ht: hl.Table, grouping: List[str] = ()) -> hl.Table:
     return agg_ht
 
 
-def maps(ht: hl.Table, mutation_ht: hl.Table, grouping: List[str] = ()) -> hl.Table:
-    ht = count_variants(ht, count_singletons=True, additional_grouping=('worst_csq', *grouping), force_grouping=True)
+def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = (),
+         singleton_expression: hl.expr.BooleanExpression = None) -> hl.Table:
+    ht = count_variants(ht, count_singletons=True, additional_grouping=('worst_csq', *additional_grouping),
+                        force_grouping=True, singleton_expression=singleton_expression)
     ht = ht.annotate(mu=mutation_ht[
         hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt, methylation_level=ht.methylation_level)].mu_snp,
                      ps=ht.singleton_count / ht.variant_count)
@@ -243,7 +246,7 @@ def maps(ht: hl.Table, mutation_ht: hl.Table, grouping: List[str] = ()) -> hl.Ta
                                            weight=syn_ps_ht.variant_count).beta)
     ht = ht.annotate(expected_singletons=(ht.mu * lm[1] + lm[0]) * ht.variant_count)
 
-    agg_ht = (ht.group_by('worst_csq', *grouping)
+    agg_ht = (ht.group_by('worst_csq', *additional_grouping)
               .aggregate(singleton_count=hl.agg.sum(ht.singleton_count),
                          expected_singletons=hl.agg.sum(ht.expected_singletons),
                          variant_count=hl.agg.sum(ht.variant_count)))
