@@ -96,7 +96,7 @@ def main(args):
             hl.read_table(po_output_path.replace('.ht', '_y.ht'))
         )
         if args.model != 'syn_canonical':
-            ht = finalize_dataset(ht, skip_transcript=args.model == 'worst_csq')
+            ht = finalize_dataset(ht, skip_transcript=args.model in ('worst_csq', 'tx_annotation'))
         ht.write(output_path, args.overwrite)
         hl.read_table(output_path).export(output_path.replace('.ht', '.txt.bgz'))
 

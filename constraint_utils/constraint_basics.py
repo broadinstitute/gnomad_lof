@@ -53,6 +53,18 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
         return pickle.load(f)
 
 
+def load_tx_expression_data():
+    tx_ht = hl.read_matrix_table(
+        'gs://gnomad-berylc/tx-annotation/gnomad_release/context_processed.full.r2.1.tx_annotated.ht').rows()
+    tx_ht = tx_ht.annotate(tx_annotation=tx_ht.tx_annotation.map(
+        lambda x: x.select('ensg', 'csq', 'symbol', 'lof',
+                           mean_expression=hl.mean(
+                               list(x.drop('ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion').values())
+                           ))
+    ))
+    return tx_ht
+
+
 # Pre-process
 def export_fasta(hc) -> None:
     # Done with an 0.1 jar
@@ -377,6 +389,12 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
         context_ht = context_ht.explode_rows(context_ht.vep.worst_csq_by_gene)
         exome_ht = process_consequences(exome_ht)
         exome_ht = exome_ht.explode_rows(exome_ht.vep.worst_csq_by_gene)
+    elif custom_model == 'tx_annotation':
+        tx_ht = load_tx_expression_data()
+        context_ht = context_ht.annotate_rows(**tx_ht[context_ht.row_key])
+        exome_ht = exome_ht.annotate_rows(**tx_ht[exome_ht.row_key])
+        context_ht = context_ht.explode_rows(context_ht.tx_annotation)
+        exome_ht = exome_ht.explode_rows(exome_ht.tx_annotation)
     else:
         context_ht = context_ht.explode_rows(context_ht.vep.transcript_consequences)
         exome_ht = exome_ht.explode_rows(exome_ht.vep.transcript_consequences)
@@ -563,6 +581,14 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
                       ht.vep.worst_csq_by_gene.polyphen_prediction)
                 .default('None'),
             'gene': ht.vep.worst_csq_by_gene.gene_symbol,
+            'coverage': ht.exome_coverage
+        }
+    elif custom_model == 'tx_annotation':
+        groupings = {
+            'annotation': ht.tx_annotation.csq,
+            'modifier': ht.tx_annotation.lof,
+            'gene': ht.tx_annotation.symbol,
+            'expressed': ht.tx_annotation.mean_expression > 0.1,
             'coverage': ht.exome_coverage
         }
     else:
