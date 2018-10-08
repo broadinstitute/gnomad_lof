@@ -176,7 +176,8 @@ def filter_vep(t: Union[hl.MatrixTable, hl.Table],
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
 
-def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True) -> Union[hl.Table, hl.MatrixTable]:
+def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True,
+                    filter_empty: bool = True) -> Union[hl.Table, hl.MatrixTable]:
     transcript_csqs = t[vep_root].transcript_consequences
     criteria = [lambda csq: True]
     if syn: criteria.append(lambda csq: csq.most_severe_consequence == "synonymous_variant")
@@ -190,6 +191,8 @@ def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', s
     transcript_csqs = transcript_csqs.filter(lambda x: combine_functions(criteria, x))
     vep_data = t[vep_root].annotate(transcript_consequences=transcript_csqs)
     t = t.annotate_rows(**{vep_root: vep_data}) if isinstance(t, hl.MatrixTable) else t.annotate(**{vep_root: vep_data})
+    if not filter_empty:
+        return t
     criteria = hl.is_defined(t.vep.transcript_consequences) & (hl.len(t.vep.transcript_consequences) > 0)
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
