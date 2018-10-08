@@ -688,11 +688,49 @@ def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.e
     })
 
 
-def calculate_z(input_ht: hl.Table, observed: hl.expr.NumericExpression, expected: hl.expr.NumericExpression, output: str = 'z') -> hl.Table:
-    input_ht = input_ht.annotate(_obs=observed, _exp=expected)
-    ht = input_ht.filter(input_ht._obs > 0)
-    ht = ht.select(_z=ht._obs / ht._exp)
-    return input_ht.annotate(
-        reasons=hl.case().when(input_ht._obs == 0, 'zero_variants').or_missing(),
-        **{output: ht[input_ht.key]._z}
-    ).drop('_obs', '_exp')
+def calculate_z(input_ht: hl.Table, obs: hl.expr.NumericExpression, exp: hl.expr.NumericExpression, output: str = 'z_raw') -> hl.Table:
+    ht = input_ht.select(_obs=obs, _exp=exp)
+    ht = ht.annotate(_chisq=(ht._obs - ht._exp) ** 2 / ht._exp)
+    return ht.select(**{output: hl.sqrt(ht._chisq) * hl.cond(ht._obs > ht._exp, -1, 1)})
+
+
+def calculate_all_z_scores(ht: hl.Table) -> hl.Table:
+    ht = ht.annotate(**calculate_z(ht, ht.obs_syn, ht.exp_syn, 'syn_z_raw')[ht.key])
+    ht = ht.annotate(**calculate_z(ht, ht.obs_mis, ht.exp_mis, 'mis_z_raw')[ht.key])
+    ht = ht.annotate(**calculate_z(ht, ht.obs_lof_classic_hc, ht.exp_lof_classic_hc, 'lof_z_raw')[ht.key])
+    reasons = hl.empty_set(hl.tstr)
+    reasons = hl.cond(hl.or_else(ht.obs_syn, 0) + hl.or_else(ht.obs_mis, 0) + hl.or_else(ht.obs_lof_classic_hc, 0) == 0, reasons.add('no_variants'), reasons)
+    reasons = hl.cond(ht.exp_syn > 0, reasons, reasons.add('no_exp_syn'), missing_false=True)
+    reasons = hl.cond(ht.exp_mis > 0, reasons, reasons.add('no_exp_mis'), missing_false=True)
+    reasons = hl.cond(ht.exp_lof_classic_hc > 0, reasons, reasons.add('no_exp_lof'), missing_false=True)
+    reasons = hl.cond(hl.abs(ht.syn_z_raw) > 5, reasons.add('syn_outlier'), reasons, missing_false=True)
+    reasons = hl.cond(ht.mis_z_raw < -5, reasons.add('mis_too_many'), reasons, missing_false=True)
+    reasons = hl.cond(ht.lof_z_raw < -5, reasons.add('lof_too_many'), reasons, missing_false=True)
+    ht = ht.annotate(constraint_flag=reasons)
+    sds = ht.aggregate(hl.struct(
+        syn_sd=hl.agg.stats(hl.agg.filter(
+            ~ht.constraint_flag.contains('no_variants') &
+            ~ht.constraint_flag.contains('syn_outlier') &
+            ~ht.constraint_flag.contains('no_exp_syn') &
+            hl.is_defined(ht.syn_z_raw),
+            ht.syn_z_raw)).stdev,
+        mis_sd=hl.agg.stats(hl.agg.filter(
+            ~ht.constraint_flag.contains('no_variants') &
+            ~ht.constraint_flag.contains('mis_outlier') &
+            ~ht.constraint_flag.contains('no_exp_mis') &
+            hl.is_defined(ht.mis_z_raw) & (ht.mis_z_raw < 0),
+            hl.agg.explode([ht.mis_z_raw, -ht.mis_z_raw])
+        )).stdev,
+        lof_sd=hl.agg.stats(hl.agg.filter(
+            ~ht.constraint_flag.contains('no_variants') &
+            ~ht.constraint_flag.contains('lof_outlier') &
+            ~ht.constraint_flag.contains('no_exp_lof') &
+            hl.is_defined(ht.lof_z_raw) & (ht.lof_z_raw < 0),
+            hl.agg.explode([ht.lof_z_raw, -ht.lof_z_raw])
+        )).stdev
+    ))
+    print(sds)
+    ht = ht.annotate_globals(**sds)
+    return ht.transmute(syn_z=ht.syn_z_raw / sds.syn_sd,
+                        mis_z=ht.mis_z_raw / sds.mis_sd,
+                        lof_z=ht.lof_z_raw / sds.lof_sd)
