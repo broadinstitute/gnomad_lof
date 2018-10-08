@@ -138,7 +138,7 @@ def pre_process_data(ht_path: str, rf_path: str, split_context_mt_path: str,
     context_mt = hl.read_matrix_table(split_context_mt_path).drop('a_index', 'was_split')
     context_mt = context_mt.annotate_rows(vep=context_mt.vep.drop('colocated_variants'))
     rf_ht = hl.read_table(rf_path)
-    mt.annotate_rows(**context_mt[mt.row_key, :],
+    mt.annotate_rows(**context_mt.rows()[mt.row_key],
                      pass_filters=(hl.len(rf_ht[mt.row_key].filters) == 0) & (mt.freq[0].AC[1] > 0)
                      ).write(output_ht_path, overwrite)
 
@@ -162,12 +162,9 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
         ).when(
             ht.cpg & (ht.methylation.MEAN > 0.2), 1
         ).default(0)
-        # 'methylation_level': hl.cond(ht.cpg, hl.int(ht.methylation.MEAN * 10), -1),
     }
     if annotate_coverage:
-        # coverage_binning = 100
         annotation['exome_coverage'] = ht.coverage.exomes.median
-        # hl.int(ht.coverage.exomes.over_20 * coverage_binning) / coverage_binning
     return ht.annotate(**annotation) if isinstance(ht, hl.Table) else ht.annotate_rows(**annotation)
 
 
@@ -204,7 +201,7 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
     context_ht = context_ht.select_rows('context', 'ref', 'alt', 'methylation_level', *grouping_variables)
     genome_ht = genome_ht.select_rows('context', 'ref', 'alt', 'methylation_level', 'freq', 'pass_filters', *grouping_variables)
 
-    genome_join = genome_ht[context_ht.row_key, :]
+    genome_join = genome_ht.rows()[context_ht.row_key]
     if remove_common_downsampled:
         ac_cutoff = 5
         downsampling_level = 1000
@@ -300,8 +297,8 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
     grouping = ('exome_coverage',)
     af_cutoff = 0.001
 
-    exome_join = exome_ht[context_ht.row_key, :]
-    keep_criteria = hl.any(lambda f: (f.AF[1] <= af_cutoff) &  # (f.AF[1] > 0) &
+    exome_join = exome_ht.rows()[context_ht.row_key]
+    keep_criteria = hl.any(lambda f: (f.AF[1] <= af_cutoff) &
                                      (f.meta.get('group') == 'adj') & (f.meta.size() == 1),
                            exome_join.freq) & exome_join.pass_filters
     context_ht = context_ht.filter_rows(hl.is_missing(exome_join) | keep_criteria).rows()
@@ -394,7 +391,7 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
 
     af_cutoff = 0.001
 
-    exome_join = exome_ht[context_ht.row_key, :]
+    exome_join = exome_ht.rows()[context_ht.row_key]
     if remove_from_denominator:
         context_ht = context_ht.filter_rows(
             hl.is_missing(exome_join) |
