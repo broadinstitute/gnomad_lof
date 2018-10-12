@@ -30,6 +30,11 @@ constraint_ht_path = f'{root}/{location}/constraint.ht'
 HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')
 POPS = ('global', 'afr', 'amr', 'eas', 'nfe', 'sas')
+MODEL_KEYS = {
+    'worst_csq': ['gene'],
+    'tx_annotation': ['gene', 'expressed'],
+    'standard': ['gene', 'transcript', 'canonical']
+}
 
 
 # Data loads
@@ -56,13 +61,20 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
 def load_tx_expression_data():
     tx_ht = hl.read_matrix_table(
         'gs://gnomad-berylc/tx-annotation/gnomad_release/context_processed.full.r2.1.tx_annotated.ht').rows()
-    tx_ht = tx_ht.annotate(tx_annotation=tx_ht.tx_annotation.map(
-        lambda x: x.select('ensg', 'csq', 'symbol', 'lof',
-                           mean_expression=hl.mean(
-                               list(x.drop('ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion').values())
-                           ))
-    ))
-    return tx_ht
+
+    def process_expression_data(csq_expression):
+        exprs_to_drop = ['ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion']
+        expression_data = csq_expression.drop(*exprs_to_drop)
+        all_tissues = list(expression_data.values())
+        expression_data_list = list(zip(list(expression_data), all_tissues))
+        brain_tissues = [x[1] for x in expression_data_list if 'Brain' in x[0]]
+        return csq_expression.select('ensg', 'csq', 'symbol', 'lof',
+                                     mean_expression=hl.mean(hl.filter(lambda e: ~hl.is_nan(e), all_tissues), filter_missing=True),
+                                     mean_brain_expression=hl.mean(hl.filter(lambda k: ~hl.is_nan(k), brain_tissues), filter_missing=True),
+                                     Brain_Cortex=csq_expression.Brain_Cortex
+                                     )
+
+    return tx_ht.annotate(tx_annotation=tx_ht.tx_annotation.map(process_expression_data))
 
 
 # Pre-process
@@ -471,10 +483,9 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
     return ht.annotate(obs_exp=ht.variant_count / ht.expected_variants)
 
 
-def finalize_dataset(po_ht: hl.Table, skip_transcript: bool = False, n_partitions: int = 100) -> hl.Table:
+def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 'canonical'),
+                     n_partitions: int = 100) -> hl.Table:
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
-    keys = ['gene']
-    if not skip_transcript: keys.extend(['transcript', 'canonical'])
     po_ht = po_ht.repartition(n_partitions).persist()
 
     # Getting classic LoF annotations (no LOFTEE)

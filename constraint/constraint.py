@@ -96,7 +96,7 @@ def main(args):
             hl.read_table(po_output_path.replace('.ht', '_y.ht'))
         )
         if args.model != 'syn_canonical':
-            ht = finalize_dataset(ht, skip_transcript=args.model in ('worst_csq', 'tx_annotation'))
+            ht = finalize_dataset(ht, keys=MODEL_KEYS[args.model])
         ht.write(output_path, args.overwrite)
         hl.read_table(output_path).export(output_path.replace('.ht', '.txt.bgz'))
 
@@ -116,6 +116,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.slack_channel:
-        try_slack(args.slack_channel, main, args)
+        try_slack(args.slack_channel.split(','), main, args)
     else:
         main(args)
