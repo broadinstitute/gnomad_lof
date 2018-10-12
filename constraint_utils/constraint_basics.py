@@ -503,7 +503,6 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
     # TODO: assess diff of this and classic HC counts to view depletions
     # Getting all LoF annotations (LOFTEE HC + new splice variants)
     lof_ht = po_ht.filter(po_ht.modifier == 'HC')
-    po_ht = po_ht.drop('possible_variants', 'adjusted_mutation_rate', 'obs_exp')
     lof_ht = collapse_lof_ht(lof_ht, keys, False)
     # lof_ht = lof_ht.annotate(**oe_confidence_interval(lof_ht, lof_ht.obs_lof, lof_ht.exp_lof)[lof_ht.key])
 
@@ -511,7 +510,8 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
     agg_expr = {
         'obs_mis': hl.agg.sum(mis_ht.variant_count),
         'exp_mis': hl.agg.sum(mis_ht.expected_variants),
-        'oe_mis': hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants)
+        'oe_mis': hl.agg.sum(mis_ht.variant_count) / hl.agg.sum(mis_ht.expected_variants),
+        'possible_mis': hl.agg.sum(mis_ht.possible_variants)
     }
     for pop in POPS:
         agg_expr[f'exp_mis_{pop}'] = hl.agg.array_sum(mis_ht[f'expected_variants_{pop}'])
@@ -521,12 +521,14 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
     pphen_mis_ht = po_ht.filter(po_ht.modifier == 'probably_damaging')
     pphen_mis_ht = pphen_mis_ht.group_by(*keys).aggregate(obs_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count),
                                                           exp_mis_pphen=hl.agg.sum(pphen_mis_ht.expected_variants),
-                                                          oe_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count) / hl.agg.sum(pphen_mis_ht.expected_variants))
+                                                          oe_mis_pphen=hl.agg.sum(pphen_mis_ht.variant_count) / hl.agg.sum(pphen_mis_ht.expected_variants),
+                                                          possible_mis_pphen=hl.agg.sum(pphen_mis_ht.possible_variants))
     syn_ht = po_ht.filter(po_ht.annotation == 'synonymous_variant').key_by(*keys)
     agg_expr = {
         'obs_syn': hl.agg.sum(syn_ht.variant_count),
         'exp_syn': hl.agg.sum(syn_ht.expected_variants),
-        'oe_syn': hl.agg.sum(syn_ht.variant_count) / hl.agg.sum(syn_ht.expected_variants)
+        'oe_syn': hl.agg.sum(syn_ht.variant_count) / hl.agg.sum(syn_ht.expected_variants),
+        'possible_syn': hl.agg.sum(syn_ht.possible_variants)
     }
     for pop in POPS:
         agg_expr[f'exp_syn_{pop}'] = hl.agg.array_sum(syn_ht[f'expected_variants_{pop}'])
