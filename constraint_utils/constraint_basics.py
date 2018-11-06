@@ -484,7 +484,7 @@ def get_proportion_observed(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable
 
 
 def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 'canonical'),
-                     n_partitions: int = 100) -> hl.Table:
+                     n_partitions: int = 1000) -> hl.Table:
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
     po_ht = po_ht.repartition(n_partitions).persist()
 
@@ -538,8 +538,10 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
     ht = lof_ht_classic.annotate(**mis_ht[lof_ht_classic.key], **pphen_mis_ht[lof_ht_classic.key],
                                  **syn_ht[lof_ht_classic.key], **lof_ht[lof_ht_classic.key],
                                  **lof_ht_classic_hc[lof_ht_classic.key])
-    ht = ht.annotate(**oe_confidence_interval(ht, ht.obs_lof_classic_hc, ht.exp_lof_classic_hc,
-                                              prefix='oe_classic_hc')[ht.key])
+    syn_cis = oe_confidence_interval(ht, ht.obs_syn, ht.exp_syn, prefix='oe_syn')
+    mis_cis = oe_confidence_interval(ht, ht.obs_mis, ht.exp_mis, prefix='oe_mis')
+    lof_cis = oe_confidence_interval(ht, ht.obs_lof_classic_hc, ht.exp_lof_classic_hc, prefix='oe_classic_hc')
+    ht = ht.annotate(**syn_cis[ht.key], **mis_cis[ht.key], **lof_cis[ht.key])
     return calculate_all_z_scores(ht)  # .annotate(**oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof)[ht.key])
 
 

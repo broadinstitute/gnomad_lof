@@ -100,6 +100,21 @@ def main(args):
         ht.write(output_path, args.overwrite)
         hl.read_table(output_path).export(output_path.replace('.ht', '.txt.bgz'))
 
+        # Prepare release
+        ht = hl.read_table(output_path)
+        ht.select(
+            obs_lof=ht.obs_lof_classic_hc, exp_lof=ht.exp_lof_classic_hc, oe_lof=ht.oe_lof_classic_hc,
+            oe_lof_lower=ht.oe_classic_hc_lower, oe_lof_upper=ht.oe_classic_hc_upper,
+            obs_mis=ht.obs_mis, exp_mis=ht.exp_mis, oe_mis=ht.oe_mis,
+            oe_mis_lower=ht.oe_mis_lower, oe_mis_upper=ht.oe_mis_upper,
+            obs_syn=ht.obs_syn, exp_syn=ht.exp_syn, oe_syn=ht.oe_syn,
+            oe_syn_lower=ht.oe_syn_lower, oe_syn_upper=ht.oe_syn_upper,
+            lof_z=ht.lof_z, mis_z=ht.mis_z, syn_z=ht.syn_z,
+            pLI=ht.pLI_classic_hc, pRec=ht.pRec_classic_hc, pNull=ht.pNull_classic_hc, gene_issues=ht.constraint_flag
+        ).select_globals().write(constraint_ht_path, overwrite=args.overwrite)
+        ht = hl.read_table(constraint_ht_path)
+        ht.export(constraint_ht_path.replace('.ht', '.txt.bgz'))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
