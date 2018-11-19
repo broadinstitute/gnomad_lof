@@ -72,7 +72,7 @@ def main(args):
     _, plateau_y_models = build_models(coverage_y_ht, args.trimers, True)
 
     po_output_path = po_ht_path.replace('.ht', f'_{args.model}.ht')
-    output_path = constraint_ht_path.replace('.ht', f'_{args.model}.ht')
+    output_path = raw_constraint_ht_path.replace('.ht', f'_{args.model}.ht')
     if args.apply_model:
         get_proportion_observed(exome_ht, context_ht, mutation_ht, plateau_models,
                                 coverage_model, recompute_possible=True,
@@ -100,7 +100,7 @@ def main(args):
         ht.write(output_path, args.overwrite)
         hl.read_table(output_path).export(output_path.replace('.ht', '.txt.bgz'))
 
-        # Prepare release
+    if args.prepare_release:
         ht = hl.read_table(output_path)
         ht.select(
             obs_lof=ht.obs_lof_classic_hc, exp_lof=ht.exp_lof_classic_hc, oe_lof=ht.oe_lof_classic_hc,
@@ -127,6 +127,7 @@ if __name__ == '__main__':
     parser.add_argument('--apply_model', help='Apply constraint model', action='store_true')
     parser.add_argument('--model', help='Which model to apply (one of "standard", "syn_canonical", or "worst_csq" for now)')
     parser.add_argument('--finalize', help='Combine autosomes, X, Y, and finalize', action='store_true')
+    parser.add_argument('--prepare_release', help='Prepare release file', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
     args = parser.parse_args()
 

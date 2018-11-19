@@ -233,8 +233,9 @@ def maps_old_model(ht: hl.Table, grouping: List[str] = ()) -> hl.Table:
 
 
 def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = (),
-         singleton_expression: hl.expr.BooleanExpression = None) -> hl.Table:
-    ht = count_variants(ht, count_singletons=True, additional_grouping=('worst_csq', *additional_grouping),
+         singleton_expression: hl.expr.BooleanExpression = None, skip_worst_csq: bool = False) -> hl.Table:
+    if not skip_worst_csq: additional_grouping.insert(0, 'worst_csq')
+    ht = count_variants(ht, count_singletons=True, additional_grouping=additional_grouping,
                         force_grouping=True, singleton_expression=singleton_expression)
     ht = ht.annotate(mu=mutation_ht[
         hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt, methylation_level=ht.methylation_level)].mu_snp,
@@ -249,7 +250,7 @@ def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = (
                                            weight=syn_ps_ht.variant_count).beta)
     ht = ht.annotate(expected_singletons=(ht.mu * lm[1] + lm[0]) * ht.variant_count)
 
-    agg_ht = (ht.group_by('worst_csq', *additional_grouping)
+    agg_ht = (ht.group_by(*additional_grouping)
               .aggregate(singleton_count=hl.agg.sum(ht.singleton_count),
                          expected_singletons=hl.agg.sum(ht.expected_singletons),
                          variant_count=hl.agg.sum(ht.variant_count)))

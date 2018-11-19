@@ -3,6 +3,7 @@ __author__ = 'konradk'
 from .generic import *
 import pickle
 import copy
+import uuid
 
 root = 'gs://gnomad-resources/constraint/hail-0.2'
 
@@ -25,7 +26,7 @@ location = 'weighted'
 mutation_rate_ht_path = f'{root}/standard/mutation_rate_methylation_bins.ht'
 po_coverage_ht_path = f'{root}/standard/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
 po_ht_path = f'{root}/{location}/prop_observed.ht'
-constraint_ht_path = f'{root}/{location}/constraint.ht'
+raw_constraint_ht_path = f'{root}/{location}/constraint.ht'
 
 HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')
@@ -58,9 +59,10 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
         return pickle.load(f)
 
 
-def load_tx_expression_data():
-    tx_ht = hl.read_matrix_table(
-        'gs://gnomad-berylc/tx-annotation/gnomad_release/context_processed.full.r2.1.tx_annotated.ht').rows()
+def load_tx_expression_data(context=True):
+    tx_ht_file = 'gs://gnomad-berylc/tx-annotation/gnomad_release/context_processed.full.r2.1.tx_annotated.ht' if context \
+        else 'gs://gnomad-berylc/tx-annotation/gnomad_release/gnomad.exomes.full.r2.1.tx_annotated.ht'
+    tx_ht = hl.read_matrix_table(tx_ht_file).rows()
 
     def process_expression_data(csq_expression):
         exprs_to_drop = ['ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion']
@@ -70,6 +72,7 @@ def load_tx_expression_data():
         brain_tissues = [x[1] for x in expression_data_list if 'Brain' in x[0]]
         return csq_expression.select('ensg', 'csq', 'symbol', 'lof',
                                      mean_expression=hl.mean(hl.filter(lambda e: ~hl.is_nan(e), all_tissues), filter_missing=True),
+                                     max_expression=hl.max(hl.filter(lambda e: ~hl.is_nan(e), all_tissues), filter_missing=True),
                                      mean_brain_expression=hl.mean(hl.filter(lambda k: ~hl.is_nan(k), brain_tissues), filter_missing=True),
                                      Brain_Cortex=csq_expression.Brain_Cortex
                                      )
@@ -603,7 +606,8 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
             'annotation': ht.tx_annotation.csq,
             'modifier': ht.tx_annotation.lof,
             'gene': ht.tx_annotation.symbol,
-            'expressed': ht.tx_annotation.mean_expression > 0.1,
+            'expressed': ht.tx_annotation.mean_expression > 0.9,
+            # 'expressed': ht.tx_annotation.max_expression > 0.05,
             'coverage': ht.exome_coverage
         }
     else:
@@ -749,26 +753,26 @@ def calculate_all_z_scores(ht: hl.Table) -> hl.Table:
     reasons = hl.cond(ht.lof_z_raw < -5, reasons.add('lof_too_many'), reasons, missing_false=True)
     ht = ht.annotate(constraint_flag=reasons)
     sds = ht.aggregate(hl.struct(
-        syn_sd=hl.agg.stats(hl.agg.filter(
+        syn_sd=hl.agg.filter(
             ~ht.constraint_flag.contains('no_variants') &
             ~ht.constraint_flag.contains('syn_outlier') &
             ~ht.constraint_flag.contains('no_exp_syn') &
             hl.is_defined(ht.syn_z_raw),
-            ht.syn_z_raw)).stdev,
-        mis_sd=hl.agg.stats(hl.agg.filter(
+            hl.agg.stats(ht.syn_z_raw)).stdev,
+        mis_sd=hl.agg.filter(
             ~ht.constraint_flag.contains('no_variants') &
             ~ht.constraint_flag.contains('mis_outlier') &
             ~ht.constraint_flag.contains('no_exp_mis') &
             hl.is_defined(ht.mis_z_raw) & (ht.mis_z_raw < 0),
-            hl.agg.explode([ht.mis_z_raw, -ht.mis_z_raw])
-        )).stdev,
-        lof_sd=hl.agg.stats(hl.agg.filter(
+            hl.agg.explode(lambda x: hl.agg.stats(x), [ht.mis_z_raw, -ht.mis_z_raw])
+        ).stdev,
+        lof_sd=hl.agg.filter(
             ~ht.constraint_flag.contains('no_variants') &
             ~ht.constraint_flag.contains('lof_outlier') &
             ~ht.constraint_flag.contains('no_exp_lof') &
             hl.is_defined(ht.lof_z_raw) & (ht.lof_z_raw < 0),
-            hl.agg.explode([ht.lof_z_raw, -ht.lof_z_raw])
-        )).stdev
+            hl.agg.explode(lambda x: hl.agg.stats(x), [ht.lof_z_raw, -ht.lof_z_raw])
+        ).stdev
     ))
     print(sds)
     ht = ht.annotate_globals(**sds)
