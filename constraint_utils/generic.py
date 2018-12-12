@@ -232,7 +232,7 @@ def maps_old_model(ht: hl.Table, grouping: List[str] = ()) -> hl.Table:
     return agg_ht
 
 
-def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = (),
+def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = [],
          singleton_expression: hl.expr.BooleanExpression = None, skip_worst_csq: bool = False) -> hl.Table:
     if not skip_worst_csq: additional_grouping.insert(0, 'worst_csq')
     ht = count_variants(ht, count_singletons=True, additional_grouping=additional_grouping,
@@ -244,10 +244,14 @@ def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = (
     syn_ps_ht = syn_ps_ht.group_by(syn_ps_ht.mu).aggregate(singleton_count=hl.agg.sum(syn_ps_ht.singleton_count),
                                                            variant_count=hl.agg.sum(syn_ps_ht.variant_count))
     syn_ps_ht = syn_ps_ht.annotate(ps=syn_ps_ht.singleton_count / syn_ps_ht.variant_count)
-    assert syn_ps_ht.all(hl.is_defined(syn_ps_ht.mu))
+    if not syn_ps_ht.all(hl.is_defined(syn_ps_ht.mu)):
+        print('Some mu were not found...')
+        print(syn_ps_ht.aggregate(hl.agg.filter(hl.is_missing(syn_ps_ht.mu), hl.agg.take(syn_ps_ht.row, 1)[0])))
+        sys.exit(1)
 
     lm = syn_ps_ht.aggregate(hl.agg.linreg(syn_ps_ht.ps, [1, syn_ps_ht.mu],
                                            weight=syn_ps_ht.variant_count).beta)
+    print(f'Got MAPS calibration model of: slope: {lm[1]}, intercept: {lm[0]}')
     ht = ht.annotate(expected_singletons=(ht.mu * lm[1] + lm[0]) * ht.variant_count)
 
     agg_ht = (ht.group_by(*additional_grouping)
