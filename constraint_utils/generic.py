@@ -1,6 +1,19 @@
 from gnomad_hail import *
 from gnomad_hail.utils.plotting import *
 
+AN_ADJ_FILTER = 0.8
+
+
+def get_an_adj_criteria(mt, samples_by_sex: Optional[dict] = None, an_adj_proportion_cutoff: float = AN_ADJ_FILTER):
+    if samples_by_sex is None:
+        samples_by_sex = mt.aggregate_cols(hl.agg.counter(mt.meta.sex))
+    return (hl.case()
+            .when(mt.locus.in_autosome_or_par(), mt.freq[0].AN >= an_adj_proportion_cutoff * 2 * sum(samples_by_sex.values()))
+            .when(mt.locus.in_x_nonpar(),
+                  mt.freq[0].AN >= an_adj_proportion_cutoff * (samples_by_sex['male'] + samples_by_sex['female'] * 2))
+            .when(mt.locus.in_y_nonpar(), mt.freq[0].AN >= an_adj_proportion_cutoff * samples_by_sex['male'])
+            .or_missing())
+
 
 def reverse_complement_bases(bases: hl.expr.StringExpression) -> hl.expr.StringExpression:
     return hl.delimit(hl.range(bases.length() - 1, -1, -1).map(lambda i: flip_base(bases[i])), '')
@@ -31,14 +44,18 @@ def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.M
 
 def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'global', variant_quality: str = 'adj',
                              singleton: bool = False) -> hl.expr.ArrayExpression:
-    return hl.agg.array_sum(
-        hl.map(lambda f: hl.int(f.AC[1] == 1) if singleton else hl.int(f.AC[1] > 0), hl.sorted(
-            hl.filter(
-                lambda f: (f.meta.size() == 3) & (f.meta.get('group') == variant_quality) &
-                          (f.meta.get('pop') == pop) & f.meta.contains('downsampling'),
-                ht.freq),
-            key=lambda f: hl.int(f.meta['downsampling'])
-        )))
+    indices = hl.zip_with_index(ht.freq_meta).filter(
+        lambda f: (f[1].size() == 3) & (f[1].get('group') == variant_quality) &
+                  (f[1].get('pop') == pop) & f[1].contains('downsampling')
+    )
+    sorted_indices = hl.sorted(indices, key=lambda f: hl.int(f[1]['downsampling'])).map(lambda x: x[0])
+
+    def get_criteria(i):
+        if singleton:
+            return hl.int(ht.freq[i].AC == 1)
+        else:
+            return hl.int(ht.freq[i].AC > 0)
+    return hl.agg.array_sum(hl.map(get_criteria, sorted_indices))
 
 
 def count_variants(ht: hl.Table,
@@ -176,18 +193,19 @@ def filter_vep(t: Union[hl.MatrixTable, hl.Table],
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
 
+def combine_functions(func_list, x):
+    cond = func_list[0](x)
+    for c in func_list[1:]:
+        cond &= c(x)
+    return cond
+
+
 def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True,
                     filter_empty: bool = True) -> Union[hl.Table, hl.MatrixTable]:
     transcript_csqs = t[vep_root].transcript_consequences
     criteria = [lambda csq: True]
     if syn: criteria.append(lambda csq: csq.most_severe_consequence == "synonymous_variant")
     if canonical: criteria.append(lambda csq: csq.canonical == 1)
-
-    def combine_functions(func_list, x):
-        cond = func_list[0](x)
-        for c in func_list[1:]:
-            cond &= c(x)
-        return cond
     transcript_csqs = transcript_csqs.filter(lambda x: combine_functions(criteria, x))
     vep_data = t[vep_root].annotate(transcript_consequences=transcript_csqs)
     t = t.annotate_rows(**{vep_root: vep_data}) if isinstance(t, hl.MatrixTable) else t.annotate(**{vep_root: vep_data})
