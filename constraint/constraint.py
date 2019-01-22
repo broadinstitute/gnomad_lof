@@ -54,17 +54,19 @@ def main(args):
     global po_coverage_ht_path
     if args.dataset != 'gnomad':
         po_coverage_ht_path = po_coverage_ht_path.replace(root, root + f'/{args.dataset}')
+    if args.skip_af_filter_upfront:
+        po_coverage_ht_path = po_coverage_ht_path.replace(root, root + '/pop_specific')
 
     if args.build_model:
-        coverage_ht = get_proportion_observed_by_coverage(exome_ht, context_ht, mutation_ht, True, args.dataset)
+        coverage_ht = get_proportion_observed_by_coverage(exome_ht, context_ht, mutation_ht, True, args.dataset, not args.skip_af_filter_upfront)
         annotate_variant_types(coverage_ht).write(po_coverage_ht_path, overwrite=args.overwrite)
         hl.read_table(po_coverage_ht_path).export(po_coverage_ht_path.replace('.ht', '.txt.bgz'))
 
-        coverage_x_ht = get_proportion_observed_by_coverage(exome_x_ht, context_x_ht, mutation_ht, True, args.dataset)
+        coverage_x_ht = get_proportion_observed_by_coverage(exome_x_ht, context_x_ht, mutation_ht, True, args.dataset, not args.skip_af_filter_upfront)
         annotate_variant_types(coverage_x_ht).write(po_coverage_ht_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
 
         # TODO: consider 20X cutoff for Y
-        coverage_y_ht = get_proportion_observed_by_coverage(exome_y_ht, context_y_ht, mutation_ht, True, args.dataset)
+        coverage_y_ht = get_proportion_observed_by_coverage(exome_y_ht, context_y_ht, mutation_ht, True, args.dataset, not args.skip_af_filter_upfront)
         annotate_variant_types(coverage_y_ht).write(po_coverage_ht_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
 
         send_message(args.slack_channel, 'Coverage data calculated!')
@@ -82,23 +84,29 @@ def main(args):
     if args.dataset != 'gnomad':
         po_output_path = po_output_path.replace(root, root + f'/{args.dataset}')
         output_path = output_path.replace(root, root + f'/{args.dataset}')
+    if args.skip_af_filter_upfront:
+        po_output_path = po_output_path.replace(root, root + '/pop_specific')
+        output_path = output_path.replace(root, root + '/pop_specific')
 
     if args.apply_model:
         get_proportion_observed(exome_ht, context_ht, mutation_ht, plateau_models,
                                 coverage_model, recompute_possible=True,
-                                custom_model=args.model, dataset=args.dataset
+                                custom_model=args.model, dataset=args.dataset,
+                                impose_high_af_cutoff_upfront=not args.skip_af_filter_upfront
                                 ).write(po_output_path, overwrite=args.overwrite)
         hl.read_table(po_output_path).export(po_output_path.replace('.ht', '.txt.bgz'))
 
         get_proportion_observed(exome_x_ht, context_x_ht, mutation_ht, plateau_x_models,
                                 coverage_model, recompute_possible=True,
-                                custom_model=args.model, dataset=args.dataset
+                                custom_model=args.model, dataset=args.dataset,
+                                impose_high_af_cutoff_upfront=not args.skip_af_filter_upfront
                                 ).write(po_output_path.replace('.ht', '_x.ht'), overwrite=args.overwrite)
         hl.read_table(po_output_path.replace('.ht', '_x.ht')).export(po_output_path.replace('.ht', '_x.txt.bgz'))
 
         get_proportion_observed(exome_y_ht, context_y_ht, mutation_ht, plateau_y_models,
                                 coverage_model, recompute_possible=True,
-                                custom_model=args.model, dataset=args.dataset
+                                custom_model=args.model, dataset=args.dataset,
+                                impose_high_af_cutoff_upfront=not args.skip_af_filter_upfront
                                 ).write(po_output_path.replace('.ht', '_y.ht'), overwrite=args.overwrite)
         hl.read_table(po_output_path.replace('.ht', '_y.ht')).export(po_output_path.replace('.ht', '_y.txt.bgz'))
 
@@ -139,6 +147,7 @@ if __name__ == '__main__':
     parser.add_argument('--apply_model', help='Apply constraint model', action='store_true')
     parser.add_argument('--dataset', help='Which dataset to use (one of gnomad, non_neuro, non_cancer, controls)', default='gnomad')
     parser.add_argument('--model', help='Which model to apply (one of "standard", "syn_canonical", or "worst_csq" for now)', default='standard')
+    parser.add_argument('--skip_af_filter_upfront', help='Skip AF filter up front (to be applied later to ensure that it is not affecting population-specific constraint): not generally recommended', action='store_true')
     parser.add_argument('--finalize', help='Combine autosomes, X, Y, and finalize', action='store_true')
     parser.add_argument('--prepare_release', help='Prepare release file', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')

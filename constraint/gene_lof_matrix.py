@@ -164,11 +164,12 @@ def generate_gene_lof_summary(mt, collapse_indels: bool = False, by_transcript: 
     return ht.annotate(oe=ht.obs_hom_lof / ht.exp_hom_lof)
 
 
-def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False):
+def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False, pop_specific: bool = False):
     keys = ['gene']
     caf_keys = ['gene']
     caf_drop = ['gene_id', 'oe']
     constraint_path = raw_constraint_ht_path.format(subdir="standard" if by_transcript else "tx_annotation")
+    if pop_specific: constraint_path = constraint_path.replace('standard/', 'pop_specific/standard/')
     ht = hl.read_table(constraint_path)
     if by_transcript:
         keys.append('transcript')
@@ -281,6 +282,8 @@ def main(args):
     if args.no_loftee:
         extension += '_no_loftee'
     gene_lof_matrix = gene_lof_matrix_path.format(extension)
+    if args.pop_specific:
+        extension += '_pop_specific'
     all_lof_metrics = all_lof_metrics_path.format(extension)
 
     tx_ht = load_tx_expression_data(context=False)
@@ -302,7 +305,7 @@ def main(args):
             gene_lof_matrix.replace('.mt', '.summary.txt.bgz'))
 
     if args.combine_lof_metrics:
-        ht = combine_lof_metrics(gene_lof_matrix, args.by_transcript)
+        ht = combine_lof_metrics(gene_lof_matrix, args.by_transcript, pop_specific=args.pop_specific)
         ht.write(all_lof_metrics, args.overwrite)
         # This file has been spot-checked. Of the canonical transcripts,
         # # 10.5% are missing CAF data due to having 0 HC no-flag LoFs

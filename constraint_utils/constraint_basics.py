@@ -345,7 +345,8 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
 
 
 def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
-                                        recompute_possible: bool = False, dataset: str = 'gnomad') -> hl.Table:
+                                        recompute_possible: bool = False, dataset: str = 'gnomad',
+                                        impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -363,7 +364,8 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
 
     def keep_criteria(ht):
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
-        crit &= (ht.freq[freq_index].AF <= af_cutoff)
+        if impose_high_af_cutoff_upfront:
+            crit &= (ht.freq[freq_index].AF <= af_cutoff)
         return crit
     context_ht = context_ht.filter(hl.is_missing(exome_join) | keep_criteria(exome_join))
 
@@ -376,7 +378,8 @@ def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl
         possible_ht.transmute(possible_variants=possible_ht.variant_count).write(possible_file, True)
 
     possible_ht = hl.read_table(possible_file)
-    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=POPS)
+    ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=100, count_downsamplings=POPS,
+                        impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront)
     ht = ht.join(possible_ht, 'outer')
     return ht
 
@@ -426,7 +429,8 @@ def take_one_annotation_from_tc_within_ht(t):
 def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_ht: hl.Table,
                             plateau_models: Dict[str, Tuple[float, float]], coverage_model: Tuple[float, float],
                             recompute_possible: bool = False, remove_from_denominator: bool = True,
-                            custom_model: str = None, dataset: str = 'gnomad') -> hl.Table:
+                            custom_model: str = None, dataset: str = 'gnomad',
+                            impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -476,7 +480,8 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
 
     def keep_criteria(ht):
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters & (ht.coverage > 0)
-        crit &= (ht.freq[freq_index].AF <= af_cutoff)
+        if impose_high_af_cutoff_upfront:
+            crit &= (ht.freq[freq_index].AF <= af_cutoff)
         return crit
 
     exome_join = exome_ht[context_ht.key]
@@ -516,7 +521,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
 
     possible_variants_ht = hl.read_table(possible_file)
     ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True,
-                        count_downsamplings=POPS)
+                        count_downsamplings=POPS, impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront)
     ht = ht.join(possible_variants_ht, 'outer')
     ht.write(f'{root}/possible_data/all_data_transcript_pop_{custom_model}.ht', True)
     ht = hl.read_table(f'{root}/possible_data/all_data_transcript_pop_{custom_model}.ht')

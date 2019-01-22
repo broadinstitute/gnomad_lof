@@ -43,7 +43,7 @@ def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.M
 
 
 def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'global', variant_quality: str = 'adj',
-                             singleton: bool = False) -> hl.expr.ArrayExpression:
+                             singleton: bool = False, impose_high_af_cutoff: bool = False) -> hl.expr.ArrayExpression:
     indices = hl.zip_with_index(ht.freq_meta).filter(
         lambda f: (f[1].size() == 3) & (f[1].get('group') == variant_quality) &
                   (f[1].get('pop') == pop) & f[1].contains('downsampling')
@@ -53,6 +53,8 @@ def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'gl
     def get_criteria(i):
         if singleton:
             return hl.int(ht.freq[i].AC == 1)
+        elif impose_high_af_cutoff:
+            return hl.int((ht.freq[i].AC > 0) & (ht.freq[i].AF <= 0.001))
         else:
             return hl.int(ht.freq[i].AC > 0)
     return hl.agg.array_sum(hl.map(get_criteria, sorted_indices))
@@ -62,7 +64,8 @@ def count_variants(ht: hl.Table,
                    count_singletons: bool = False, count_downsamplings: Optional[List[str]] = (),
                    additional_grouping: Optional[List[str]] = (), partition_hint: int = 100,
                    omit_methylation: bool = False, return_type_only: bool = False,
-                   force_grouping: bool = False, singleton_expression: hl.expr.BooleanExpression = None) -> Union[hl.Table, Any]:
+                   force_grouping: bool = False, singleton_expression: hl.expr.BooleanExpression = None,
+                   impose_high_af_cutoff_here: bool = False) -> Union[hl.Table, Any]:
     """
     Count variants by context, ref, alt, methylation_level
     """
@@ -80,9 +83,9 @@ def count_variants(ht: hl.Table,
 
     if count_downsamplings or force_grouping:
         # Slower, but more flexible (allows for downsampling agg's)
-        output = {'variant_count': hl.agg.count()}
+        output = {'variant_count': hl.agg.count_where(ht.freq[0].AF <= 0.001) if impose_high_af_cutoff_here else hl.agg.count()}
         for pop in count_downsamplings:
-            output[f'downsampling_counts_{pop}'] = downsampling_counts_expr(ht, pop)
+            output[f'downsampling_counts_{pop}'] = downsampling_counts_expr(ht, pop, impose_high_af_cutoff=impose_high_af_cutoff_here)
         if count_singletons:
             output['singleton_count'] = hl.agg.count_where(singleton_expression)
             for pop in count_downsamplings:
