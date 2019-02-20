@@ -200,10 +200,16 @@ def filter_vep(t: Union[hl.MatrixTable, hl.Table],
     return t.filter_rows(criteria) if isinstance(t, hl.MatrixTable) else t.filter(criteria)
 
 
-def combine_functions(func_list, x):
+def combine_functions(func_list, x, operator='and'):
+    possible_operators = ('and', 'or')
+    if operator not in possible_operators:
+        raise ValueError(f'combine_functions only allows operators: {", ".join(possible_operators)}')
     cond = func_list[0](x)
     for c in func_list[1:]:
-        cond &= c(x)
+        if operator == 'and':
+            cond &= c(x)
+        elif operator == 'or':
+            cond |= c(x)
     return cond
 
 
