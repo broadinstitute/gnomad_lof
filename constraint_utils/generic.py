@@ -94,7 +94,7 @@ def count_variants(ht: hl.Table,
             output['singleton_count'] = hl.agg.count_where(singleton_expression)
             for pop in count_downsamplings:
                 output[f'singleton_downsampling_counts_{pop}'] = downsampling_counts_expr(ht, pop, singleton=True)
-        return ht.group_by(**grouping)._set_buffer_size(1000).partition_hint(partition_hint).aggregate(**output)
+        return ht.group_by(**grouping).partition_hint(partition_hint).aggregate(**output)
     else:
         agg = {'variant_count': hl.agg.counter(grouping)}
         if count_singletons:
@@ -265,14 +265,14 @@ def maps(ht: hl.Table, mutation_ht: hl.Table, additional_grouping: List[str] = [
     ht = ht.annotate(mu=mutation_ht[
         hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt, methylation_level=ht.methylation_level)].mu_snp,
                      ps=ht.singleton_count / ht.variant_count)
+    if not ht.all(hl.is_defined(ht.mu)):
+        print('Some mu were not found...')
+        print(ht.aggregate(hl.agg.filter(hl.is_missing(ht.mu), hl.agg.take(ht.row, 1)[0])))
+        sys.exit(1)
     syn_ps_ht = ht.filter(ht.worst_csq == 'synonymous_variant')
     syn_ps_ht = syn_ps_ht.group_by(syn_ps_ht.mu).aggregate(singleton_count=hl.agg.sum(syn_ps_ht.singleton_count),
                                                            variant_count=hl.agg.sum(syn_ps_ht.variant_count))
     syn_ps_ht = syn_ps_ht.annotate(ps=syn_ps_ht.singleton_count / syn_ps_ht.variant_count)
-    if not syn_ps_ht.all(hl.is_defined(syn_ps_ht.mu)):
-        print('Some mu were not found...')
-        print(syn_ps_ht.aggregate(hl.agg.filter(hl.is_missing(syn_ps_ht.mu), hl.agg.take(syn_ps_ht.row, 1)[0])))
-        sys.exit(1)
 
     lm = syn_ps_ht.aggregate(hl.agg.linreg(syn_ps_ht.ps, [1, syn_ps_ht.mu],
                                            weight=syn_ps_ht.variant_count).beta)
