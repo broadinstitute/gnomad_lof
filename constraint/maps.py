@@ -247,7 +247,6 @@ def main(args):
                 loftee_assess_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
             )
 
-
     if args.methylation_hist:
         methylation_hist = context_ht.aggregate(hl.agg.hist(context_ht.methylation.MEAN, 0, 1, 40))
         data = list(zip(methylation_hist.bin_edges, methylation_hist.bin_freq))

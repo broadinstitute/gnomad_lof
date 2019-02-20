@@ -31,11 +31,6 @@ def main(args):
         raw_mu_ht = calculate_mu_by_downsampling(genome_ht, full_context_ht, recalculate_all_possible_summary=True,
                                                  recalculate_all_possible_summary_unfiltered=False)
         raw_mu_ht.write(mutation_rate_ht_path, overwrite=args.overwrite)
-        # This command was run for Nicky for genome mutation rates
-        # raw_mu_ht = calculate_mu_by_downsampling(genome_ht, full_context_ht,
-        #                                          summary_file=f'gs://konradk/tmp/all_possible_counts_by_context_remove_common_ordinary_trimers_{args.trimers}.pckl',
-        #                                          recalculate_all_possible_summary=True, remove_common_downsampled=False, remove_common_ordinary=True)
-        # raw_mu_ht.write(f'{root}/exploratory/mutation_rate_methylation_remove_common_ordinary_trimers_{args.trimers}.ht', overwrite=args.overwrite)
         hl.read_table(mutation_rate_ht_path).select('mu_snp').export(mutation_rate_ht_path.replace('.ht', '.txt.bgz'))
         send_message(args.slack_channel, 'Mutation rate calculated!')
 

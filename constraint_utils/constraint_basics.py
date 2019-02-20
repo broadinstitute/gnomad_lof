@@ -344,7 +344,7 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
                        mu_snp_afr=ht.downsamplings_mu_afr[index_1kg])
 
 
-def get_proportion_observed_by_coverage(exome_ht: hl.MatrixTable, context_ht: hl.MatrixTable, mutation_ht: hl.Table,
+def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table, mutation_ht: hl.Table,
                                         recompute_possible: bool = False, dataset: str = 'gnomad',
                                         impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
 
