@@ -2,6 +2,10 @@ from gnomad_hail import *
 from gnomad_hail.utils.plotting import *
 
 AN_ADJ_FILTER = 0.8
+data_type_sex_counts = {
+    'exomes': {'female': 57787, 'male': 67961},
+    'genomes': {'female': 6967, 'male': 8741}
+}
 
 
 def get_an_adj_criteria(mt, samples_by_sex: Optional[dict] = None, an_adj_proportion_cutoff: float = AN_ADJ_FILTER):
