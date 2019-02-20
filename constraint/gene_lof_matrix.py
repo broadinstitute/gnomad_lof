@@ -2,6 +2,8 @@
 
 __author__ = 'konradk'
 
+from pprint import pprint
+
 from constraint_utils import *
 
 root = 'gs://gnomad-resources/lof_paper'
@@ -194,7 +196,6 @@ def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False, pop_specif
     exac_pli = load_exac_pli_data()
     gene_ht = load_gtf_data()
     expr_ht = load_gene_expression_data()
-    omim = load_omim_data()
     if by_transcript:
         exac = exac_pli[constraint_ht.transcript]
         gene = gene_ht.drop('gene_name')[constraint_ht.transcript]
@@ -205,7 +206,6 @@ def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False, pop_specif
         expr_ht = expr_ht.key_by('gene_id').drop('transcript_id')
     constraint_ht = constraint_ht.annotate(
         **caf_ht[constraint_ht.key], **gene,
-        in_omim=hl.is_defined(omim[constraint_ht.gene]),
         exac_pLI=exac.pLI, exac_obs_lof=exac.n_lof, exac_exp_lof=exac.exp_lof, exac_oe_lof=exac.n_lof / exac.exp_lof
     )
     # If CAF data is missing and LoFs are possible in the gene, set all CAF metrics to zero
@@ -319,7 +319,10 @@ def main(args):
 
     if args.export_combined_metrics:
         ht = hl.read_table(all_lof_metrics)
-        ht = ht.annotate(constraint_flag=hl.delimit(ht.constraint_flag, '|'))
+        ht = ht.annotate(constraint_flag=hl.delimit(ht.constraint_flag, '|'),
+                         chromosome=ht.interval.start.contig,
+                         start_position=ht.interval.start.position,
+                         end_position=ht.interval.end.position)
         ht = select_primitives_from_ht(ht)
         ht.export(all_lof_metrics.replace('.ht', '.txt.bgz'))
         if args.by_transcript:
@@ -346,9 +349,9 @@ def main(args):
             AC=mt.freq[0].AC, AN=mt.freq[0].AN, AF=mt.freq[0].AF, n_hom=mt.freq[0].homozygote_count,
             CSQ=vep_ht[mt.row_key].vep
         )).drop('is_missing')
-        # hl.export_vcf(mt, homozygous_lof_mt_path.replace('.mt', '.vcf.bgz'), metadata={
-        #     'info': {'CSQ': {'Description': vep_ht.vep_csq_header.collect()[0]}}
-        # })
+        hl.export_vcf(mt, homozygous_lof_mt_path.replace('.mt', '.vcf.bgz'), metadata={
+            'info': {'CSQ': {'Description': vep_ht.vep_csq_header.collect()[0]}}
+        })
         ht = mt.rows()
         # ht.count()  # 3385 variants
         ht.select(
