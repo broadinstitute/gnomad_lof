@@ -5,27 +5,26 @@ import pickle
 import copy
 import uuid
 
-root = 'gs://gnomad-resources/constraint/hail-0.2/final'
+root = 'gs://gnomad-public/papers/2019-flagship-lof/v1.0'
 
 # Unprocessed files
-fasta_path = "gs://gnomad-resources/constraint/hail-0.2/reference/Homo_sapiens_assembly19.fasta"
-gerp_annotations_path = 'gs://gnomad-resources/annotations/gerp.scores.GRCh37.ht'  # Gerp is in here as S
-regional_variation_raw_path = 'gs://gnomad-resources/constraint/source/whole_genome_regional_variation_in_mutation_rate.50kb_bins.txt'
+fasta_path = f'{root}/context/source/Homo_sapiens_assembly19.fasta'
+gerp_annotations_path = f'{root}/annotations/gerp.scores.GRCh37.ht'  # Gerp is in here as S
 
 # Input datasets
-raw_context_txt_path = 'gs://gnomad-resources/context/source/Homo_sapiens_assembly19.fasta.snps_only.vep.txt.bgz/*'
-raw_context_ht_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.unsplit.ht'
-vep_context_ht_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.unsplit.vep_20181129.ht'
-context_ht_path = 'gs://gnomad-resources/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht'
-processed_genomes_ht_path = f'{root}/genomes_processed.ht'
-processed_exomes_ht_path = f'{root}/exomes_processed.ht'
+raw_context_txt_path = f'{root}/context/source/Homo_sapiens_assembly19.fasta.snps_only.vep.txt.bgz/*'
+raw_context_ht_path = f'{root}/context/Homo_sapiens_assembly19.fasta.snps_only.unsplit.ht'
+vep_context_ht_path = f'{root}/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.unsplit.vep_20181129.ht'
+context_ht_path = f'{root}/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht'
+processed_genomes_ht_path = f'{root}/model/genomes_processed.ht'
+processed_exomes_ht_path = f'{root}/model/exomes_processed.ht'
 
 # Possible variant files
-all_possible_summary_pickle = f'{root}/tmp/all_possible_counts_by_context.pckl'
-all_possible_summary_unfiltered_pickle = f'{root}/all_possible_counts_by_context_unfiltered.pckl'
+all_possible_summary_pickle = f'{root}/model/tmp/all_possible_counts_by_context.pckl'
+all_possible_summary_unfiltered_pickle = f'{root}/model/tmp/all_possible_counts_by_context_unfiltered.pckl'
 
-mutation_rate_ht_path = f'{root}/mutation_rate_methylation_bins.ht'
-po_coverage_ht_path = f'{root}/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
+mutation_rate_ht_path = f'{root}/model/mutation_rate_methylation_bins.ht'
+po_coverage_ht_path = f'{root}/model/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
 po_ht_path = f'{root}/{{subdir}}/prop_observed_{{subdir}}.ht'
 raw_constraint_ht_path = f'{root}/{{subdir}}/constraint_{{subdir}}.ht'
 
@@ -45,13 +44,6 @@ def get_old_mu_data() -> hl.Table:
                                   delimiter=' ', impute=True)
     return old_mu_data.transmute(context=old_mu_data['from'], ref=old_mu_data['from'][1],
                                  alt=old_mu_data.to[1]).key_by('context', 'ref', 'alt')
-
-
-def load_regional_data() -> hl.Table:
-    ht = hl.import_table(regional_variation_raw_path, impute=True)
-    return ht.transmute(filters=ht['filter'],
-                        interval=hl.locus_interval(ht.chr.replace('chr', ''), ht.start + 1, ht.end, includes_end=True)
-                        ).key_by('interval')
 
 
 def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
@@ -490,7 +482,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
 
     exome_ht = exome_ht.filter(keep_criteria(exome_ht))
 
-    possible_file = f'{root}/possible_data/possible_transcript_pop_{custom_model}.ht'
+    possible_file = f'{root}/model/possible_data/possible_transcript_pop_{custom_model}.ht'
     if recompute_possible:
         ht = count_variants(context_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True)
         ht = annotate_with_mu(ht, mutation_ht)
@@ -523,8 +515,8 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     ht = count_variants(exome_ht, additional_grouping=grouping, partition_hint=2000, force_grouping=True,
                         count_downsamplings=POPS, impose_high_af_cutoff_here=not impose_high_af_cutoff_upfront)
     ht = ht.join(possible_variants_ht, 'outer')
-    ht.write(f'{root}/possible_data/all_data_transcript_pop_{custom_model}.ht', True)
-    ht = hl.read_table(f'{root}/possible_data/all_data_transcript_pop_{custom_model}.ht')
+    ht.write(f'{root}/model/possible_data/all_data_transcript_pop_{custom_model}.ht', True)
+    ht = hl.read_table(f'{root}/model/possible_data/all_data_transcript_pop_{custom_model}.ht')
 
     grouping.remove('coverage')
     agg_expr = {

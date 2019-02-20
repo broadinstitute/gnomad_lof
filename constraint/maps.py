@@ -1,8 +1,6 @@
 from constraint_utils import *
 
-root = 'gs://gnomad-resources/lof_paper'
 subdir = 'summary_results'
-
 maps_ht_path = f'{root}/{subdir}/maps_plain_{{data_type}}.ht'
 loftee_maps_ht_path = f'{root}/{subdir}/maps_loftee_{{data_type}}.ht'
 fifty_bp_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_50bp_{{data_type}}.ht'
