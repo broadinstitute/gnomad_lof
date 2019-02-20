@@ -367,6 +367,53 @@ def main(args):
         ht.write(lofs_by_gene_ht_path, args.overwrite)
         hl.read_table(lofs_by_gene_ht_path).export(lofs_by_gene_ht_path.replace('.ht', '.txt.bgz'))
 
+    if args.count_lofs:
+        ht = get_gnomad_public_data('exomes')
+        result = count_lofs(ht)
+        ht = ht.filter(hl.len(ht.filters) == 0)
+        filtered_result = count_lofs(ht)
+        print('\n')
+        pprint(dict(result))
+        print('\n')
+        pprint(dict(filtered_result))
+
+
+def count_lofs(ht):
+    lof_cats = hl.literal({"splice_acceptor_variant", "splice_donor_variant", "stop_gained", "frameshift_variant"})
+    basic_lof_csqs = ht.vep.transcript_consequences.filter(
+        lambda x: lof_cats.contains(add_most_severe_consequence_to_consequence(x).most_severe_consequence) &
+                  (x.biotype == 'protein_coding')
+    )
+    basic_canonical_lof_csqs = ht.vep.transcript_consequences.filter(
+        lambda x: lof_cats.contains(add_most_severe_consequence_to_consequence(x).most_severe_consequence) &
+                  (x.biotype == 'protein_coding') & (x.canonical == 1)
+    )
+    hc_lof_csqs = ht.vep.transcript_consequences.filter(lambda x: (x.lof == 'HC'))
+    hc_noflag_lof_csqs = ht.vep.transcript_consequences.filter(lambda x: (x.lof == 'HC') & hl.is_missing(x.lof_flags))
+    hc_canonical_lof_csqs = ht.vep.transcript_consequences.filter(lambda x: (x.lof == 'HC') & (x.canonical == 1))
+    hc_noflag_canonical_lof_csqs = ht.vep.transcript_consequences.filter(
+        lambda x: (x.lof == 'HC') & hl.is_missing(x.lof_flags) & (x.canonical == 1))
+    sample_sizes = {'female': 57787, 'male': 67961}
+    result = ht.aggregate(
+        hl.struct(
+            basic_lofs=hl.agg.count_where(hl.len(basic_lof_csqs) > 0),
+            basic_canonical_lofs=hl.agg.count_where(hl.len(basic_canonical_lof_csqs) > 0),
+
+            hc_lofs=hl.agg.count_where(hl.len(hc_lof_csqs) > 0),
+            hc_noflag_lofs=hl.agg.count_where(hl.len(hc_noflag_lof_csqs) > 0),
+            an_adj_hc_lofs=hl.agg.count_where((hl.len(hc_lof_csqs) > 0) & get_an_adj_criteria(ht, sample_sizes)),
+            an_adj_hc_noflag_lofs=hl.agg.count_where(
+                (hl.len(hc_noflag_lof_csqs) > 0) & get_an_adj_criteria(ht, sample_sizes)),
+
+            hc_canonical_lofs=hl.agg.count_where(hl.len(hc_canonical_lof_csqs) > 0),
+            hc_canonical_noflag_lofs=hl.agg.count_where(hl.len(hc_noflag_canonical_lof_csqs) > 0),
+            an_adj_hc_canonical_lofs=hl.agg.count_where(
+                (hl.len(hc_canonical_lof_csqs) > 0) & get_an_adj_criteria(ht, sample_sizes)),
+            an_adj_hc_canonical_noflag_lofs=hl.agg.count_where(
+                (hl.len(hc_noflag_canonical_lof_csqs) > 0) & get_an_adj_criteria(ht, sample_sizes)))
+    )
+    return result
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -383,6 +430,7 @@ if __name__ == '__main__':
     parser.add_argument('--export_combined_metrics', help='Export combined LoF metrics', action='store_true')
     parser.add_argument('--compute_homozygous_lof', help='Compute Homozygous LoFs', action='store_true')
     parser.add_argument('--export_homozygous_lof', help='Export Homozygous LoF summary', action='store_true')
+    parser.add_argument('--count_lofs', help='Generate counts of LoFs for paper', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
     args = parser.parse_args()
 
