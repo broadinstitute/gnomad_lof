@@ -2,19 +2,15 @@
 
 __author__ = 'konradk'
 
-from pprint import pprint
-
 from constraint_utils import *
 
-root = 'gs://gnomad-resources/lof_paper'
-gene_lof_matrix_path = f'{root}/individual_level/full_gene_lof_matrix_{{}}.mt'
-all_lof_metrics_path = f'{root}/full_lof_metrics_{{}}.ht'
-homozygous_lof_mt_path = f'{root}/individual_level/all_homozygous_lofs.mt'
+gene_lof_matrix_path = 'gs://gnomad-resources/lof_paper/individual_level/full_gene_lof_matrix_{}.mt'
+homozygous_lof_mt_path = 'gs://gnomad-resources/lof_paper/individual_level/all_homozygous_lofs.mt'
 lofs_by_gene_ht_path = f'{root}/homozygous_lof_summary.ht'
 
 
 def load_gtf_data():
-    ht = hl.experimental.import_gtf('gs://konradk/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=12)
+    ht = hl.experimental.import_gtf('gs://hail-common/references/gencode/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=12)
     ht = ht.annotate(gene_id=ht.gene_id.split('\\.')[0],
                      transcript_id=ht.transcript_id.split('\\.')[0],
                      length=ht.interval.end.position - ht.interval.start.position + 1)
@@ -40,19 +36,8 @@ def load_gene_expression_data():
 
 
 def load_exac_pli_data():
-    exac_pli = hl.import_table('gs://konradk/fordist_cleaned_exac_r03_march16_z_pli_rec_null_data.txt.gz', impute=True)
+    exac_pli = hl.import_table(f'{root}/old_exac_data/fordist_cleaned_exac_r03_march16_z_pli_rec_null_data.txt.gz', impute=True)
     return exac_pli.key_by(transcript=exac_pli.transcript.split('\\.')[0])
-
-
-def load_gene_list_data():
-    gene_lists = hl.import_table('gs://konradk/all_gene_lists.txt').key_by('gene').collect_by_key()
-    return gene_lists.transmute(lists=gene_lists.values.map(lambda x: x.list))
-
-
-def load_omim_data():
-    omim = hl.import_table('gs://konradk/omim.use.tsv')
-    omim = omim.annotate(gene=omim.genes.split('\|'))
-    return omim.explode('gene').key_by('gene')
 
 
 def add_rank(ht, field, ascending=True, total_genes=None, bins=10, defined_only=False):
@@ -273,18 +258,37 @@ def compute_homozygous_lof(mt, tx_ht):
     return mt.repartition(100)
 
 
-def main(args):
-    hl.init(log='/constraint.log')
-
+def get_gene_lof_path(args):
     extension = 'by_transcript' if args.by_transcript else 'worst'
     if args.filter_an_adj:
         extension += '_an_adj'
     if args.no_loftee:
         extension += '_no_loftee'
-    gene_lof_matrix = gene_lof_matrix_path.format(extension)
+    return gene_lof_matrix_path.format(extension)
+
+
+def get_release_subdir(args):
+    subdir = []
+    if not args.by_transcript:
+        subdir.append('worst_csq')
+    if not args.filter_an_adj:
+        subdir.append('no_an_adj')
+    if args.no_loftee:
+        subdir.append('no_loftee')
     if args.pop_specific:
-        extension += '_pop_specific'
-    all_lof_metrics = all_lof_metrics_path.format(extension)
+        subdir.append('pop_specific')
+    subdir = '.'.join(subdir)
+    if subdir: subdir = f'other_cuts/{subdir}/'
+    return subdir
+
+
+def main(args):
+    hl.init(log='/constraint.log')
+
+    gene_lof_matrix = get_gene_lof_path(args)
+    subdir = get_release_subdir(args)
+
+    all_lof_metrics_path = f'{root}/{subdir}gnomad.v2.1.1.lof_metrics.{{extension}}'
 
     tx_ht = load_tx_expression_data(context=False)
     if args.calculate_gene_lof_matrix:
@@ -298,15 +302,14 @@ def main(args):
         mt = hl.read_matrix_table(gene_lof_matrix)
         ht = generate_gene_lof_summary(mt, not args.dont_collapse_indels, args.by_transcript)
         if args.dont_collapse_indels:
-            extension += '_by_indel'
-            gene_lof_matrix = gene_lof_matrix_path.format(extension)
+            gene_lof_matrix = gene_lof_matrix.replace('.mt', '_by_indel.mt')
         ht.write(gene_lof_matrix.replace('.mt', '.summary.ht'), args.overwrite)
         hl.read_table(gene_lof_matrix.replace('.mt', '.summary.ht')).drop('classic_caf_array').export(
             gene_lof_matrix.replace('.mt', '.summary.txt.bgz'))
 
     if args.combine_lof_metrics:
         ht = combine_lof_metrics(gene_lof_matrix, args.by_transcript, pop_specific=args.pop_specific)
-        ht.write(all_lof_metrics, args.overwrite)
+        ht.write(all_lof_metrics_path.format(extension='by_transcript.ht'), args.overwrite)
         # This file has been spot-checked. Of the canonical transcripts,
         # # 10.5% are missing CAF data due to having 0 HC no-flag LoFs
         # # # Many are actually 0, some e.g. single exon flag remove all LoFs
@@ -318,21 +321,22 @@ def main(args):
         # Checked that number of exons is similar to ExAC (minor differences = UTRs)
 
     if args.export_combined_metrics:
-        ht = hl.read_table(all_lof_metrics)
+        ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
         ht = ht.annotate(constraint_flag=hl.delimit(ht.constraint_flag, '|'),
                          chromosome=ht.interval.start.contig,
                          start_position=ht.interval.start.position,
                          end_position=ht.interval.end.position)
         ht = select_primitives_from_ht(ht)
-        ht.export(all_lof_metrics.replace('.ht', '.txt.bgz'))
+        ht.export(all_lof_metrics_path.format(extension='by_transcript.txt.bgz'))
         if args.by_transcript:
             ht = ht.filter(ht.canonical)
             ht = add_rank(ht, 'oe_lof_upper', defined_only=True).drop('canonical')
-            ht.export(all_lof_metrics.replace('.ht', '_by_gene.txt.bgz'))
+            ht.write(all_lof_metrics_path.format(extension='by_gene.ht'), args.overwrite)
+            ht.export(all_lof_metrics_path.format(extension='by_gene.txt.bgz'))
 
-        ht = hl.read_table(all_lof_metrics)
+        ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
         ht = explode_downsamplings(ht, args.by_transcript)
-        ht.export(all_lof_metrics.replace('.ht', '.downsamplings.txt.bgz'))
+        ht.export(all_lof_metrics_path.format(extension='downsamplings.txt.bgz'))
 
     if args.compute_homozygous_lof:
         mt = get_gnomad_data('exomes', adj=True, non_refs_only=True,

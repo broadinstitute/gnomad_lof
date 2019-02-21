@@ -14,8 +14,8 @@ gerp_annotations_path = f'{root}/annotations/gerp.scores.GRCh37.ht'  # Gerp is i
 # Input datasets
 raw_context_txt_path = f'{root}/context/source/Homo_sapiens_assembly19.fasta.snps_only.vep.txt.bgz/*'
 raw_context_ht_path = f'{root}/context/Homo_sapiens_assembly19.fasta.snps_only.unsplit.ht'
-vep_context_ht_path = f'{root}/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.unsplit.vep_20181129.ht'
-context_ht_path = f'{root}/context/hail-0.2/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht'
+vep_context_ht_path = f'{root}/context/Homo_sapiens_assembly19.fasta.snps_only.unsplit.vep_20181129.ht'
+context_ht_path = f'{root}/context/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.ht'
 processed_genomes_ht_path = f'{root}/model/genomes_processed.ht'
 processed_exomes_ht_path = f'{root}/model/exomes_processed.ht'
 
@@ -27,6 +27,7 @@ mutation_rate_ht_path = f'{root}/model/mutation_rate_methylation_bins.ht'
 po_coverage_ht_path = f'{root}/model/prop_observed_by_coverage_no_common_pass_filtered_bins.ht'
 po_ht_path = f'{root}/{{subdir}}/prop_observed_{{subdir}}.ht'
 raw_constraint_ht_path = f'{root}/{{subdir}}/constraint_{{subdir}}.ht'
+final_constraint_ht_path = f'{root}/{{subdir}}/constraint_final_{{subdir}}.ht'
 
 HIGH_COVERAGE_CUTOFF = 40
 VARIANT_TYPES_FOR_MODEL = ('ACG', 'TCG', 'CCG', 'GCG', 'non-CpG')
@@ -40,7 +41,7 @@ MODEL_KEYS = {
 
 # Data loads
 def get_old_mu_data() -> hl.Table:
-    old_mu_data = hl.import_table('gs://gnomad-resources/constraint/source/fordist_1KG_mutation_rate_table.txt',
+    old_mu_data = hl.import_table(f'{root}/old_exac_data/fordist_1KG_mutation_rate_table.txt',
                                   delimiter=' ', impute=True)
     return old_mu_data.transmute(context=old_mu_data['from'], ref=old_mu_data['from'][1],
                                  alt=old_mu_data.to[1]).key_by('context', 'ref', 'alt')
@@ -53,8 +54,8 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
 
 
 def load_tx_expression_data(context=True):
-    tx_ht_file = 'gs://gnomad-berylc/tx-annotation/gnomad_release/Homo_sapiens_assembly19.fasta.snps_only.vep_20181129.tx_annotated.120518.mt' if context \
-        else 'gs://gnomad-berylc/tx-annotation/gnomad_release/gnomad.exomes.r2.1.1.sites.tx_annotated.120518.ht'
+    tx_ht_file = 'gs://gnomad-public/papers/2019-tx-annotation/pre_computed/all.possible.snvs.tx_annotated.021819.ht' if context \
+        else 'gs://gnomad-public/papers/2019-tx-annotation/gnomad.exomes.r2.1.1.sites.tx_annotated.021319.ht'
     tx_ht = hl.read_matrix_table(tx_ht_file).rows()
 
     def process_expression_data(csq_expression):
@@ -76,7 +77,7 @@ def load_tx_expression_data(context=True):
 def annotate_distance_to_splice(input_ht):
     # Load GTF file
     tmp_path = f'/tmp_{uuid.uuid4()}.ht'
-    ht = hl.experimental.import_gtf('gs://konradk/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=100)
+    ht = hl.experimental.import_gtf('gs://hail-common/references/gencode/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=100)
     ht = ht.filter((ht.feature == 'exon') & (ht.transcript_type == 'protein_coding')).key_by()
     ht = ht.select(gene_id=ht.gene_id.split('\\.')[0], transcript_id=ht.transcript_id.split('\\.')[0],
                    loc=[hl.struct(acceptor=ht.strand == '+', locus=ht.interval.start),
@@ -162,11 +163,10 @@ def vep_context_ht(raw_context_ht_path: str, vep_context_ht_path: str, overwrite
     for i in chunks:
         print(i)
         ht = hl.filter_intervals(ht_full, [hl.parse_locus_interval(i)])
-        hl.vep(ht, vep_config).write(f'gs://gnomad-resources/context/hail-0.2/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.ht', overwrite=overwrite, stage_locally=True)
-    hts = [hl.read_table(f'gs://gnomad-resources/context/hail-0.2/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.ht') for i in chunks]
+        hl.vep(ht, vep_config).write(f'{root}/context/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.ht', overwrite=overwrite, stage_locally=True)
+    hts = [hl.read_table(f'{root}/context/parts/Homo_sapiens_assembly19.fasta.snps_only.{i}.ht') for i in chunks]
     ht = hts[0].union(*hts[1:])
     ht.write(vep_context_ht_path, overwrite)
-    send_message('@konradjk', f'Merged!')
 
 
 def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str], methylation_ht_path: str,

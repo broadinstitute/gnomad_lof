@@ -76,12 +76,15 @@ def main(args):
 
     po_output_path = po_ht_path.format(subdir=args.model)
     output_path = raw_constraint_ht_path.format(subdir=args.model)
+    final_path = final_constraint_ht_path.format(subdir=args.model)
     if args.dataset != 'gnomad':
         po_output_path = po_output_path.replace(root, root + f'/{args.dataset}')
         output_path = output_path.replace(root, root + f'/{args.dataset}')
+        final_path = final_path.replace(root, root + f'/{args.dataset}')
     if args.skip_af_filter_upfront:
         po_output_path = po_output_path.replace(root, root + '/pop_specific')
         output_path = output_path.replace(root, root + '/pop_specific')
+        final_path = final_path.replace(root, root + 'f/pop_specific')
 
     if args.apply_model:
         get_proportion_observed(exome_ht, context_ht, mutation_ht, plateau_models,
@@ -124,9 +127,8 @@ def main(args):
               for t, ci in zip(('obs', 'exp', 'oe', 'mu', 'oe', 'oe'),
                                ('', '', '', '', '_lower', '_upper'))],
             *[f'{v}_z' for v in var_types], 'pLI', 'pRec', 'pNull', gene_issues=ht.constraint_flag
-        ).select_globals().write(f'{root}/constraint_final_{args.model}.ht', overwrite=args.overwrite)
-        ht = hl.read_table(f'{root}/constraint_final_{args.model}.ht')
-        ht.export(f'{root}/constraint_final_{args.model}.txt.bgz')
+        ).select_globals().write(final_path, overwrite=args.overwrite)
+        hl.read_table(final_path).export(final_path.replace('.ht', '.txt.bgz'))
 
     hl.upload_log()
 
