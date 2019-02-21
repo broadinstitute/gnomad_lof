@@ -26,11 +26,13 @@ def load_gtf_data():
 
 
 def load_gene_expression_data():
-    ht = hl.import_table('gs://konradk/GTEx.v7.median_expression_per_tx_per_tissue.021018.tsv.bgz', impute=True, min_partitions=12)
+    ht = hl.read_table('gs://gnomad-public/papers/2019-tx-annotation/data/GTEx.V7.tx_medians.110818.ht')
     # Filtering out tissues with < 100 samples
-    brain_tissues = [x[1] for x in list(ht.row.items()) if 'Brain' in x[0] and x[0] not in ('Brain_Spinalcord_cervicalc_1_', 'Brain_Substantianigra')]
+    brain_tissues = ht.row.values.filter(lambda x: x.tissue.contains('Brain') &
+                                                   (x.tissue != 'Brain-Spinalcord(cervicalc-1)') &
+                                                   (x.tissue != 'Brain-Substantianigra')).map(
+        lambda y: y.tx_expr_summary)
     return ht.select(
-        'transcript_id', 'gene_id',
         brain_expression=hl.mean(hl.filter(lambda k: ~hl.is_nan(k), brain_tissues), filter_missing=True)
     ).key_by('transcript_id')
 
