@@ -1,6 +1,7 @@
 
 methylation_hist = function(save_plot=F) {
-  methylation_data = read_delim(gzfile('data/methylation_hist.txt.bgz'), delim = '\t')
+  fname = get_or_download_file('methylation_hist.txt.bgz', subfolder = 'summary_results/')
+  methylation_data = read_delim(gzfile(fname), delim = '\t')
   p = ggplot(methylation_data) + aes(x = edge, y = freq) + geom_bar(stat='identity') +
     theme_classic() + 
     geom_vline(xintercept = 0.2, linetype='dashed', color='darkgray') +
@@ -17,9 +18,11 @@ methylation_hist = function(save_plot=F) {
 
 shapes = c('0' = 16, '1' = 15, '2' = 17)
 compare_mutation_rates = function(save_plot=F, log=F, legend=T) {
-  new_mu_data = read_delim(gzfile('data/mutation_rate_methylation_bins.txt.bgz'), delim = '\t') %>%
+  fname = get_or_download_file('mutation_rate_methylation_bins.txt.bgz', subfolder = 'model/')
+  new_mu_data = read_delim(gzfile(fname), delim = '\t') %>%
     annotate_variant_types()
-  old_mu_data = read_delim('data/fordist_1KG_mutation_rate_table.txt', delim = ' ') %>%
+  fname = get_or_download_file('fordist_1KG_mutation_rate_table.txt', subfolder = 'old_exac_data/')
+  old_mu_data = read_delim(fname, delim = ' ') %>%
     transmute(context = from, ref = substr(from, 2, 2), alt = substr(to, 2, 2), old_mu = mu_snp)
   
   new_mu_data %>%
@@ -59,7 +62,8 @@ compare_mutation_rates = function(save_plot=F, log=F, legend=T) {
 }
 
 load_calibration_data = function(high_coverage_cutoff=40) {
-  coverage_data = read_delim(gzfile('data/prop_observed_by_coverage_no_common_pass_filtered_bins.txt.bgz'), delim = '\t')
+  fname = get_or_download_file('prop_observed_by_coverage_no_common_pass_filtered_bins.txt.bgz', subfolder = 'model/')
+  coverage_data = read_delim(gzfile(fname), delim = '\t')
    
   coverage_data %>%
     filter(exome_coverage >= high_coverage_cutoff) %>%

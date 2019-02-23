@@ -39,10 +39,12 @@ produce_stats <- function(net, measures = NA, quickrun = T, runsilent = F){
 }
 
 load_degree_data = function() {
+  tmp_dir = "./tmpStringDB"
+  suppressWarnings(dir.create(tmp_dir))
   string_db <- STRINGdb$new(version="10",
                             species=9606,
                             score_threshold=0,
-                            input_directory="tmpStringDB")
+                            input_directory=tmp_dir)
   
   # Wrangling -----------------------------------------------------------------
   gene_data_map = gene_data %>% 

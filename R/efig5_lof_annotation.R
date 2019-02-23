@@ -1,13 +1,5 @@
 gene_data = load_constraint_data()
 
-pre_loftee_data = load_constraint_data(loftee=F) %>%
-  transmute(gene, transcript, 
-            p_no_loftee=p, classic_caf_no_loftee=classic_caf,
-            n_sites_no_loftee=n_sites, max_af_no_loftee=max_af)
-
-gene_data %>%
-  left_join(pre_loftee_data) -> loftee_compare_data
-
 lof_frequency_spectrum = function(save_plot=F, cumulative=F) {
   if (cumulative) {
     p = gene_data %>%
@@ -156,6 +148,13 @@ end_trunc_assessment = function(save_plot=F) {
 }
 
 loftee_comparisons = function() {
+  pre_loftee_data = load_constraint_data(loftee=F) %>%
+    transmute(gene, transcript, 
+              p_no_loftee=p, classic_caf_no_loftee=classic_caf,
+              n_sites_no_loftee=n_sites, max_af_no_loftee=max_af)
+  
+  gene_data %>%
+    left_join(pre_loftee_data) -> loftee_compare_data
   loftee_compare_data %>%
     ggplot + aes(x = p_no_loftee, y = p) + geom_point(alpha=0.2) + 
     theme_classic() + scale_x_log10() + scale_y_log10()

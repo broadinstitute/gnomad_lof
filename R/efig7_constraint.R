@@ -17,7 +17,8 @@ oe_2d_density = function(save_plot=F, recompute_ridges=F) {
       do(cbind(., generate_ci(.$obs, .$exp))) %>%
       ungroup -> all_cis
   } else {
-    all_cis = get(load('data/all_cis.RData'))
+    fname = get_or_download_file('all_cis.RData', subfolder = 'misc_files/')
+    all_cis = get(load(fname))
   }
   
   gene_data %>%
@@ -146,7 +147,8 @@ caf_vs_constraint = function(save_plot=F) {
   return(p)
 }
 
-full_constraint_data = read_delim(gzfile('data/constraint_standard.txt.bgz'), delim = '\t') %>%
+fname = get_or_download_file('constraint_standard.txt.bgz', subfolder = 'standard/')
+full_constraint_data = read_delim(gzfile(fname), delim = '\t') %>%
   mutate(obs_os = obs_lof_with_os - obs_lof,
          exp_os = exp_lof_with_os - exp_lof)
 

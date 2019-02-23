@@ -10,15 +10,8 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
                          'ASD', 6430,
                          'ddid', 5305,
                          'Control', 2179)
-  new_de_novo_data = read_delim(gzfile('data/ASD_ddid_Updated.hamdam.ASC.loftee.beta.annotated.vepped.proportions.011418.cut.txt'), 
-                                delim = '\t', col_types = list(CHROM=col_character(), locus=col_character()))
   
-  quality_data = read_delim('data/denovo/ASC_v15_callset1.5_de_novo_calls_with_annotations.raw.2017-12-13.txt',
-                            delim = '\t')
-  
-  de_novo_data = new_de_novo_data %>%
-    left_join(quality_data %>% transmute(variant = Variant, filters = Filters)) %>%
-    filter(is.na(filters) | filters == 'PASS')
+  de_novo_data = get_de_novo_data()
   de_novo_results = de_novo_data %>%
     filter(group %in% c(phenotype, 'Control')) %>%
     mutate(csq = fct_relevel(case_when(csq %in% lof_like & lof == 'HC' ~ 'pLoF',

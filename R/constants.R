@@ -1,4 +1,4 @@
-setwd("~/pending_research/gnomad/gnomad_lof/R")
+setwd("~/pending_research/gnomad/gnomad_lof_fresh/R")
 options(stringsAsFactors = F)
 library(Hmisc)
 library(tidyverse)
@@ -33,7 +33,9 @@ library(RMySQL)
 library(cowplot)
 # install.packages(c('tidyverse', 'broom', 'plotly', 'slackr', 'magrittr', 'gapminder', 'readr', 'purrr', 'skimr', 'gganimate', 'gghighlight', 'plotROC', 'naniar'))
 
-data_dir = 'data'
+data_dir = './data/'
+suppressWarnings(dir.create(data_dir))
+data_url = 'https://storage.googleapis.com/gnomad-public/papers/2019-flagship-lof/v1.0/'
 
 slackr_setup(channel='#constraint')
 post_slack = FALSE
@@ -249,9 +251,38 @@ downsampling_x_axis = function(log=T) {
   }
 }
 
+get_or_download_file = function(base_fname, subfolder='') {
+  fname = paste0(data_dir, base_fname)
+  if (!file.exists(fname)) {
+    url = paste0(data_url, subfolder, base_fname)
+    download.file(url, fname)
+  }
+  return(fname)
+}
+
+get_de_novo_data = function() {
+  base_fname = 'asd_ddid_de_novos.tx_annotated.021819.tsv.bgz'
+  fname = paste0(data_dir, base_fname)  
+  if (!file.exists(fname)) {
+    url = paste0('https://storage.googleapis.com/gnomad-public/papers/2019-tx-annotation/results/de_novo_variants/', base_fname)
+    download.file(url, fname)
+  }
+  new_de_novo_data = read_delim(gzfile(fname), delim = '\t', 
+                                col_types = list(CHROM=col_character(), locus=col_character()))
+  
+  fname = get_or_download_file('ASC_v15_callset1.5_de_novo_calls_with_annotations.raw.2017-12-13.txt',
+                               subfolder = 'misc_files/')
+  quality_data = read_delim(fname, delim = '\t')
+  
+  new_de_novo_data %>%
+    left_join(quality_data %>% transmute(variant = Variant, filters = Filters)) %>%
+    filter(is.na(filters) | filters == 'PASS') %>%
+    return
+}
+
 load_downsampled_gene_data = function() {
-  return(read_delim(gzfile('data/full_lof_metrics_by_transcript_an_adj.downsamplings.txt.bgz'), delim = '\t',
-                    col_types = list(canonical=col_logical())))
+  fname = get_or_download_file('gnomad.v2.1.1.lof_metrics.downsamplings.txt.bgz')
+  return(read_delim(gzfile(fname), delim = '\t', col_types = list(canonical=col_logical())))
 }
 
 load_downsampled_data = function() {
@@ -280,13 +311,13 @@ load_downsampled_data = function() {
   return(ds_melt)
 }
 
-load_constraint_data = function(level='gene', type='by_transcript', an_adj=T, loftee=T) {
-  fname = paste0('data/full_lof_metrics_', type,
-                 ifelse(an_adj, '_an_adj', ''),
-                 ifelse(loftee, '', '_no_loftee'),
-                 ifelse(level == 'transcript' | type == 'worst', '', '_by_gene'),
-                 '.txt.bgz')
-  print(paste('Loading from', fname))
+load_constraint_data = function(level='gene', loftee=T) {
+  fname = paste0('gnomad.v2.1.1.lof_metrics.by_', level, '.txt.bgz')
+  subfolder = ''
+  if (loftee) {
+    subfolder = 'other_cuts/no_loftee/'
+  }
+  fname = get_or_download_file(fname, subfolder)
   if (level == 'transcript') {
     col_list = list(canonical=col_logical())
   } else {
@@ -314,9 +345,12 @@ load_gene_tissue_mapping = function() {
     group_by(gene) %>%
     mutate(most_constrained_transcript = min(oe_lof_upper) == oe_lof_upper) %>% ungroup
   
-  gene_tissue = read_excel('../misc_files/NIHMS950518-supplement-table_s2.xlsx', skip=4) %>%
+  gene_tissue_fname = get_or_download_file('NIHMS950518-supplement-table_s2.xlsx', subfolder = 'misc_files/')
+  gene_tissue = read_excel(gene_tissue_fname, skip=4) %>%
     filter(!is.na(gene))
-  tx_expression = read_delim(gzfile("../misc_files/GTEx.v7.median_expression_per_tx_per_tissue.021018.tsv.bgz"), delim = '\t') %>%
+  
+  fname = get_or_download_file('GTEx.v7.median_expression_per_tx_per_tissue.021018.tsv.bgz', subfolder = 'misc_files/')
+  tx_expression = read_delim(gzfile(fname), delim = '\t') %>%
     select(-v, -agg_expression) %>%
     rename(transcript = transcript_id)
   
@@ -361,7 +395,8 @@ load_maps_data = function(cut = 'plain', data_type = 'exomes') {
   if (cut == 'plain') {
     col_list[['protein_coding']] = col_logical()
   }
-  read_delim(gzfile(paste0('data/maps_', cut, '_', data_type, '.txt.bgz')), delim = '\t',
+  fname = get_or_download_file(paste0('maps_', cut, '_', data_type, '.txt.bgz'), subfolder = 'summary_results/')
+  read_delim(gzfile(fname), delim = '\t',
              col_types = do.call(cols, col_list)) %>%
     mutate(csq=format_vep_category(worst_csq),
            maps_upper=maps + 1.96 * maps_sem,
@@ -398,7 +433,9 @@ cumulative_maps = function(data, prefix='maps') {
 }
 
 load_observed_possible_data = function(data_type='exomes') {
-  read_delim(gzfile(paste0('data/observed_possible_expanded_', data_type, '.txt.bgz')), 
+  fname = paste0('observed_possible_expanded_', data_type, '.txt.bgz')
+  fname = get_or_download_file(fname, subfolder = 'summary_results/')
+  read_delim(gzfile(fname), 
              delim = '\t', col_types=list(possible=readr::col_number(),
                                           observed=readr::col_number(),
                                           singletons=readr::col_number()
@@ -408,13 +445,16 @@ load_observed_possible_data = function(data_type='exomes') {
 }
 
 load_indel_data = function(data_type='exomes') {
-  read_delim(gzfile(paste0('data/indels_summary_', data_type, '.txt.bgz')), delim = '\t') %>%
+  fname = paste0('indels_summary_', data_type, '.txt.bgz')
+  fname = get_or_download_file(fname, subfolder = 'summary_results/')
+  read_delim(gzfile(fname), delim = '\t') %>%
     mutate(csq=format_vep_category(worst_csq)) %>%
     return
 }
 
-load_freq_summary_data = function(data_type='exomes') {
-  read_delim(gzfile('data/freq_loftee_exomes.txt.bgz'), delim = '\t',
+load_freq_summary_data = function() {
+  fname = get_or_download_file('freq_loftee_exomes.txt.bgz', subfolder = 'summary_results/')
+  read_delim(gzfile(fname), delim = '\t',
              col_types = list(fail_loftee = col_logical(),
                               loftee_os = col_logical(),
                               pass_loftee = col_logical(),
@@ -423,7 +463,8 @@ load_freq_summary_data = function(data_type='exomes') {
 }
 
 load_sv_data = function() {
-  read_delim('data/gnomAD_v2_SV_MASTER_strictSubset.rare_biallelic_LoF_deletions_per_gene.obs_exp.txt', delim = '\t') %>%
+  fname = get_or_download_file('gnomAD_v2_SV_MASTER_strictSubset.rare_biallelic_LoF_deletions_per_gene.obs_exp.txt', subfolder = 'misc_files/')
+  read_delim(fname, delim = '\t') %>%
     rename(gene = '#gene') %>%
     return
 }
@@ -461,14 +502,14 @@ load_all_gene_list_data = function(list_dir = '../../gene_lists/lists/') {
 }
 
 load_sum_stats = function() {
-  read_tsv("data/reshA3.tsv.gz", 
-           col_types = list(var_id=col_character(), prevalence=col_number())) %>%
+  fname = get_or_download_file('reshA3.tsv.gz', subfolder = 'misc_files/')
+  read_tsv(fname, col_types = list(var_id=col_character(), prevalence=col_number())) %>%
     mutate(name = as.factor(name))
 }
 
 load_tx_summary = function(expression_cutoff=0.3) {
-  tx_expression = read_delim(gzfile('../misc_files/GTEx.v7.median_expression_per_tx_per_tissue.021018.tsv.bgz'), 
-                             delim = '\t') %>%
+  fname = get_or_download_file('GTEx.v7.median_expression_per_tx_per_tissue.021018.tsv.bgz', subfolder = 'misc_files/')
+  tx_expression = read_delim(gzfile(fname), delim = '\t') %>%
     select(-c(v, agg_expression, Bladder, Brain_Spinalcord_cervicalc_1_, Brain_Substantianigra,
               Cervix_Ectocervix,Cervix_Endocervix, FallopianTube, Kidney_Cortex,
               MinorSalivaryGland, Uterus, Ovary,Testis, Vagina,
