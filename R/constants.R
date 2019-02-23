@@ -1,4 +1,3 @@
-setwd("~/pending_research/gnomad/gnomad_lof_fresh/R")
 options(stringsAsFactors = F)
 library(Hmisc)
 library(tidyverse)
