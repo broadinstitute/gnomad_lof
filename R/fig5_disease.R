@@ -29,9 +29,12 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
     group_by(oe_lof_upper_bin, csq) %>%
     do(ps_tst(.)) %>% ungroup
   
+  de_novo_results = de_novo_results %>%
+    filter(csq %in% csqs_to_plot) %>%
+    mutate(csq=fct_drop(csq))
+  
   ymaxlim = ifelse(phenotype == 'ddid', 16, 7)
   p = de_novo_results %>%
-    filter(csq %in% csqs_to_plot) %>%
     ggplot + aes(x = oe_lof_upper_bin, y = OR, color = csq, ymax = upper, ymin = lower) + theme_classic() +
     geom_point(position = position_dodge(width = 0.8), size = 3) + 
     geom_errorbar(position = position_dodge(width = 0.8), width = 0) +
