@@ -2,7 +2,9 @@ gene_data = load_constraint_data()
 transcript_data = load_constraint_data(level = 'transcript')
 sv_data = load_sv_data()
 
-gene_list_spectrum = function(save_plot=F) {
+gene_list_spectrum = function(save_plot=F,
+                              gene_lists_to_plot=c('Haploinsufficient', 'Autosomal Recessive', 'Olfactory Genes'),
+                              gene_lists_to_skip=c('')) {
   or_genes = gene_data %>%
     filter(grepl('^OR', gene)) %>%
     transmute(gene = gene, gene_list = 'Olfactory Genes')
@@ -43,14 +45,18 @@ gene_list_spectrum = function(save_plot=F) {
     write_delim('data/s_table_gene_lists.tsv', delim='\t')
   
   top_legend = max(gene_list_spectrum_data$prop_in_bin)# + ko_data$sem)
+  gene_list_colors_plot = gene_list_colors
+  for (gene_list in gene_lists_to_skip) {
+    gene_list_colors_plot[gene_list] = NA
+  }
   p3a = gene_list_spectrum_data %>%
-    filter(gene_list %in% c('Haploinsufficient', 'Autosomal Recessive', 'Olfactory Genes')) %>%
+    filter(gene_list %in% gene_lists_to_plot) %>%
     ggplot + aes(x = oe_lof_upper_bin, y = prop_in_bin, color = gene_list, fill = gene_list) + 
     # geom_line(lwd=1.5) + 
     geom_bar(position='dodge', stat='identity', width=0.9) + 
     theme_classic() + 
-    scale_color_manual(values=gene_list_colors, guide=F) + # name=NULL) +
-    scale_fill_manual(values=gene_list_colors, guide=F) + # name=NULL) +
+    scale_color_manual(values=gene_list_colors_plot, guide=F) + # name=NULL) +
+    scale_fill_manual(values=gene_list_colors_plot, guide=F) + # name=NULL) +
     annotate('text', 4.5, top_legend, hjust=0.5, vjust=1, 
              label='Haploinsufficient', color=gene_list_colors['Haploinsufficient']) +
     annotate('text', 4.5, top_legend*0.88, hjust=0.5, vjust=1, 
