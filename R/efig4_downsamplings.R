@@ -101,29 +101,33 @@ obs_poss_ds %>%
   summarize(observed = sum(observed), possible = sum(as.numeric(possible)), 
             prop = observed / possible)
 
-observed_by_function = function(save_plot=F, plot_log=T, plot_type='prop_observed', grouping=c('csq', 'downsampling')) {
+observed_by_function = function(save_plot=F, plot_log=T, plot_type='prop_observed', grouping=c('csq', 'downsampling'), plot_csqs=c('synonymous', 'nonsense', 'missense')) {
   plotting_csq = 'csq' %in% grouping
-  plot_data = obs_poss_ds %>%
-    filter((!plotting_csq | csq %in% c('synonymous', 'nonsense', 'missense')) & downsampling >= 100 & coverage >= 30) %>%
+  plot_data = obs_poss_ds
+  if ('pLoF' %in% plot_csqs) {
+    plot_data = plot_data %>%
+      mutate(csq = ifelse(csq %in% c('splice donor', 'splice acceptor', 'nonsense'), 'pLoF', csq))
+  }
+  plot_data = plot_data %>%
+    filter((!plotting_csq | csq %in% plot_csqs) & downsampling >= 100 & coverage >= 30) %>%
     group_by_at(vars(grouping)) %>%
     summarize(observed = sum(observed), possible = sum(as.numeric(possible)),
               prop_observed = observed / possible)
-  
-  y1 = max(plot_data[,plot_type]) * 0.9
-  y2 = ifelse(plot_log, 0.7 * y1, 0.9 * y1)
-  y3 = ifelse(plot_log, 0.49 * y1, 0.8 * y1)
-  print(paste(y1, y2, y3))
+  ytop = max(plot_data[,plot_type]) * ifelse(save_plot, 0.98, 0.9)
+  y1 = ytop
   pe4d = plot_data %>%
     ggplot + aes(x = downsampling)
   if (plotting_csq) {
-    pe4d = pe4d + aes(color = csq) +
-      annotate('text', 100, y1, hjust=0, label='synonymous', color = color_syn, size = 3) +
-      annotate('text', 100, y2, hjust=0, label='missense', color = color_mis, size = 3) +
-      annotate('text', 100, y3, hjust=0, label='pLoF', color = color_lof, size = 3)
+    pe4d = pe4d + aes(color = csq)
+    for (csq in plot_csqs) {
+      pe4d = pe4d + 
+        annotate('text', 100, y1, hjust=0, label=csq, color = colors[[csq]], size = 3)
+      y1 = ifelse(plot_log, 0.7 * y1, y1 - ytop / 10)
+    }
   }
   pe4d = pe4d + aes_string(y = plot_type) +
-    geom_line(lwd=2) + theme_classic() +
-    scale_color_manual(values=variant_category_colors, name='') + 
+    geom_line(lwd=ifelse(save_plot, 1.5, 2)) + theme_classic() +
+    scale_color_manual(values=c(variant_category_colors, colors), name='') + 
     guides(color=F) +
     xlab('Sample size') + 
     ylab(if_else(plot_type=='prop_observed', 'Percent observed', 'Number observed')) 
