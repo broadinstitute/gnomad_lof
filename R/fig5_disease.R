@@ -89,7 +89,6 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
     annotate('text', x = 99, y = 100, vjust=1, hjust=1, label='pLoF', color = color_lof, size = 3)
   
   # Raw counts
-  phenotype = 'ASD'
   p_raw = de_novo_data %>%
     filter(group %in% c(phenotype, 'Control')) %>%
     mutate(csq = fct_relevel(case_when(csq %in% lof_like & lof == 'HC' ~ 'pLoF',
