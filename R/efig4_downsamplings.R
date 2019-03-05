@@ -1,6 +1,8 @@
 data_type = 'exomes'
 obs_poss_ds = load_observed_possible_data(data_type)
 indel_summary = load_indel_data(data_type)
+indel_ds_file = get_or_download_file('indels_summary_exomes.downsampling.txt.bgz', subfolder = 'summary_results/')
+indel_ds = read_delim(gzfile(indel_ds_file), delim='\t')
 
 num_observed_by_class = function(save_plot=F) {
   pe4a = obs_poss_ds %>%
@@ -101,15 +103,19 @@ obs_poss_ds %>%
   summarize(observed = sum(observed), possible = sum(as.numeric(possible)), 
             prop = observed / possible)
 
-observed_by_function = function(save_plot=F, plot_log=T, plot_type='prop_observed', grouping=c('csq', 'downsampling'), plot_csqs=c('synonymous', 'nonsense', 'missense')) {
+observed_by_function = function(save_plot=F, plot_log=T, plot_type='prop_observed', grouping=c('csq', 'downsampling'), plot_csqs=c('synonymous', 'nonsense', 'missense'), coverage_cutoff = 30) {
   plotting_csq = 'csq' %in% grouping
   plot_data = obs_poss_ds
   if ('pLoF' %in% plot_csqs) {
     plot_data = plot_data %>%
       mutate(csq = ifelse(csq %in% c('splice donor', 'splice acceptor', 'nonsense'), 'pLoF', csq))
+    plot_data = indel_ds %>%
+      filter(worst_csq == 'frameshift_variant' & downsampling >= 100 & coverage >= coverage_cutoff) %>%
+      mutate(csq = 'pLoF') %>%
+      union_all(plot_data)
   }
   plot_data = plot_data %>%
-    filter((!plotting_csq | csq %in% plot_csqs) & downsampling >= 100 & coverage >= 30) %>%
+    filter((!plotting_csq | csq %in% plot_csqs) & downsampling >= 100 & coverage >= coverage_cutoff) %>%
     group_by_at(vars(grouping)) %>%
     summarize(observed = sum(observed), possible = sum(as.numeric(possible)),
               prop_observed = observed / possible)
