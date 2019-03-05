@@ -2,6 +2,7 @@ from constraint_utils import *
 
 subdir = 'summary_results'
 maps_ht_path = f'{root}/{subdir}/maps_plain_{{data_type}}.ht'
+sfs_ht_path = f'{root}/{subdir}/sfs_{{data_type}}.ht'
 loftee_maps_ht_path = f'{root}/{subdir}/maps_loftee_{{data_type}}.ht'
 fifty_bp_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_50bp_{{data_type}}.ht'
 end_trunc_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_gerp_{{data_type}}.ht'
@@ -85,14 +86,43 @@ def main(args):
             print(f'Running indels for {data_type}...')
             indel_ht = ht.filter(hl.is_indel(ht.alleles[0], ht.alleles[1]))
 
-            indels = indel_ht.group_by(indel_ht.worst_csq, indel_ht.coverage).partition_hint(100).aggregate(
+            indels = indel_ht.group_by(indel_ht.worst_csq, indel_ht.coverage,
+                                       indel_length=hl.len(indel_ht.alleles[1]) - hl.len(indel_ht.alleles[0])).partition_hint(100).aggregate(
                 singletons=hl.agg.count_where(indel_ht.freq[0].AC == 1),
-                observed=hl.agg.count())
+                observed=hl.agg.count(),
+                downsampling_array=hl.agg.array_sum(indel_ht.freq.map(lambda x: x.AC > 0)),
+                singleton_downsampling_array=hl.agg.array_sum(indel_ht.freq.map(lambda x: x.AC == 1)))
             total_real_estate = coverage_ht.group_by(coverage_ht.median).partition_hint(100).aggregate(real_estate=hl.agg.count())
             indels.annotate(coverage_real_estate=total_real_estate[indels.coverage].real_estate).write(
                 indels_summary_ht_path.format(data_type=data_type), args.overwrite)
-            hl.read_table(indels_summary_ht_path.format(data_type=data_type)).export(
+            indels = hl.read_table(indels_summary_ht_path.format(data_type=data_type))
+            indels.export(
                 indels_summary_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
+            )
+            explode_downsamplings(indels.annotate(possible=indels.coverage_real_estate),
+                                  sum(sample_sizes.values())).export(
+                indels_summary_ht_path.format(data_type=data_type).replace('.ht', '.downsampling.txt.bgz'))
+
+        if args.run_sfs:
+            criteria = hl.case(missing_false=True).when(ht.freq[0].AC == 1, 'Singleton')
+            if data_type == 'genomes':
+                criteria = criteria.when(ht.freq[0].AF < 1e-3, '< 0.1%')
+            else:
+                criteria = (criteria.when(ht.freq[0].AC == 2, 'Doubleton')
+                            .when(ht.freq[0].AC <= 5, 'AC 3-5')
+                            .when(ht.freq[0].AF < 1e-4, '< 0.01%')
+                            .when(ht.freq[0].AF < 1e-3, '0.01% - 0.1%'))
+            sfs_ht = ht.annotate(
+                freq_bin=criteria
+                    .when(ht.freq[0].AF < 1e-2, '0.1% - 1%')
+                    .when(ht.freq[0].AF < 1e-1, '1% - 10%')
+                    .default('>10%')
+            )
+            sfs_ht.group_by(
+                sfs_ht.freq_bin, sfs_ht.worst_csq, snp=hl.is_snp(sfs_ht.alleles[0], sfs_ht.alleles[1])
+            ).aggregate(total=hl.agg.count()).write(sfs_ht_path.format(data_type=data_type), overwrite=args.overwrite)
+            hl.read_table(sfs_ht_path.format(data_type=data_type)).export(
+                sfs_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
             )
 
         context = context_ht[ht.key]
@@ -259,6 +289,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--overwrite', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_indels', help='Overwrite everything', action='store_true')
+    parser.add_argument('--run_sfs', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_loftee_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_end_trunc_maps', help='Overwrite everything', action='store_true')
