@@ -253,8 +253,8 @@ downsampling_x_axis = function(log=T) {
   }
 }
 
-get_or_download_file = function(base_fname, subfolder='') {
-  fname = paste0(data_dir, base_fname)
+get_or_download_file = function(base_fname, subfolder='', local_name='') {
+  fname = paste0(data_dir, ifelse(local_name != '', local_name, base_fname))
   if (!file.exists(fname)) {
     url = paste0(data_url, subfolder, base_fname)
     download.file(url, fname)
@@ -316,10 +316,12 @@ load_downsampled_data = function() {
 load_constraint_data = function(level='gene', loftee=T) {
   fname = paste0('gnomad.v2.1.1.lof_metrics.by_', level, '.txt.bgz')
   subfolder = ''
-  if (loftee) {
+  local_name = ''
+  if (!loftee) {
     subfolder = 'other_cuts/no_loftee/'
+    local_name = paste0('gnomad.v2.1.1.lof_metrics.no_loftee.by_', level, '.txt.bgz')
   }
-  fname = get_or_download_file(fname, subfolder)
+  fname = get_or_download_file(fname, subfolder, local_name)
   if (level == 'transcript') {
     col_list = list(canonical=col_logical())
   } else {
