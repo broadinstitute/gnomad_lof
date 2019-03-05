@@ -283,6 +283,50 @@ non_can_splice = function() {
   
 }
 
+basic_loftee = function(save_plot=F) {
+  loftee = load_maps_data(cut = 'loftee')
+  maps_data = load_maps_data()
+  
+  all_maps = maps_data %>% 
+    filter(protein_coding & csq %in% c('synonymous', 'missense')) %>%
+    mutate(category = csq) %>%
+    select(-protein_coding)
+
+  loftee_filters = loftee %>%
+    mutate(
+      category = case_when(lof == 'HC' ~ 'high confidence pLoF',
+                           lof == 'LC' ~ 'low confidence pLoF')
+    ) %>%
+    filter(!is.na(category)) %>%
+    select(-lof, -lof_flags, -lof_filter) %>%
+    union(all_maps) %>%
+    regroup_maps(c('category')) %>%
+    mutate(category = fct_relevel(category, 'synonymous', 'missense', 'low confidence pLoF')) %>%
+    arrange(maps)
+  
+  # loftee_colors = rep(color_syn, length(loftee_filters$lof_filter_simplified))
+  
+  loftee_colors = c(color_syn, color_mis, color_lc_lof, color_lof)
+  names(loftee_colors) = c('synonymous', 'missense', 'low confidence pLoF', 'high confidence pLoF')
+
+  down_factor = 0.007
+  p_maps_loftee = loftee_filters %>%
+    ggplot + theme_classic() +
+    aes(x = category, y = maps, color = category,
+        ymin = maps_lower, ymax = maps_upper) + 
+    geom_pointrange() +
+    scale_color_manual(values=loftee_colors, guide='none') +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+    xlab(NULL) + ylab('MAPS')
+  
+  if (save_plot) {
+    pdf('maps_lof.pdf', height=2.5, width=4)
+    print(p_maps_loftee)
+    dev.off()
+  }
+  return(p_maps_loftee)
+}
+
 figure2 = function() {
   p2a = figure2a() + theme(plot.margin = margin(12.5, 5.5, 5.5, 5.5))
   p2b = figure2b()

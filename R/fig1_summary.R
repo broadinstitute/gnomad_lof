@@ -190,3 +190,26 @@ figure1 = function() {
                  label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
   dev.off()
 }
+
+sfs = function(save_plot = F, data_type = 'genomes') {
+  sfs_data = read_delim(gzfile(get_or_download_file(paste0('sfs_', data_type, '.txt.bgz'), subfolder = 'summary_results/')), delim='\t')
+  
+  p_sfs = sfs_data %>%
+    group_by(freq_bin) %>%
+    summarize(total = sum(total, na.rm=T)) %>%
+    mutate(freq_bin = fct_relevel(freq_bin, 'Singleton', 'Doubleton', 'AC 3-5'),
+           freq_bin = fct_relevel(freq_bin, '>10%', after = Inf)
+    ) %>%
+    ggplot + aes(x = freq_bin, y = total) +
+    geom_bar(stat='identity') + xlab('Frequency') +
+    scale_y_continuous(name='Number of variants', labels=comma) +
+    theme(axis.text.x = element_text(angle=30, hjust=1))
+  
+  if (save_plot) {
+    pdf(paste0('sfs_', data_type, '.pdf'), height=3.5, width=5)
+    print(p_sfs)
+    dev.off()
+  }
+  
+  return(p_sfs)
+}
