@@ -312,6 +312,9 @@ enriched_traits = function(save_plot=F) {
     pdf('5c_enriched_traits.pdf', height=3, width=5)
     print(p)
     dev.off()
+    png('5d_enriched_traits.png', height=3*300, width=5*300, res=300)
+    print(p)
+    dev.off()
   }
   return(p)
 }
