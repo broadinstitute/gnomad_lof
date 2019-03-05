@@ -99,7 +99,7 @@ oe_distribution = function(save_plot=F, metric='oe_lof') {
     theme_classic() + xlab(xlabel) + ylab('Number of genes') + guides(fill=F, color=F)
   
   if (save_plot) {
-    pdf('oe_distribution.pdf', height=2, width=3)
+    pdf(paste0('e7_oe_distribution_', metric, '.pdf'), height=2, width=3)
     print(p)
     dev.off()
   }

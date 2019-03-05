@@ -267,7 +267,7 @@ partitioning_heritability_enrichment = function(save_plot=F, normalize=F) {
     geom_hline(yintercept = 1, col = "darkgray", linetype = 'dashed')
   
   if (save_plot) {
-    pdf('5c_partitioning_heritability_enrich.pdf', height=3, width=4)
+    pdf('5b_partitioning_heritability_enrich.pdf', height=3, width=4)
     print(p)
     dev.off()
   }
@@ -310,10 +310,8 @@ enriched_traits = function(save_plot=F) {
     theme(axis.text.x = element_text(angle = 30, hjust = 1)) 
   
   if (save_plot) {
-    pdf('5d_enriched_traits.pdf', height=3, width=5)
-    print(p + geom_text_repel(aes(label = description),
-                            data = continuous_data %>% filter(logp > bonf_threshold),
-                            color='black', size=1))
+    pdf('5c_enriched_traits.pdf', height=3, width=5)
+    print(p)
     dev.off()
   }
   return(p)

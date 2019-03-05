@@ -155,7 +155,7 @@ proportion_in_omim = function(save_plot=F) {
     theme_classic() + oe_x_axis + ylab('Proportion in OMIM')
   
   if (save_plot) {
-    pdf('proportion_in_omim.pdf', height=3, width=5)
+    pdf('e9_proportion_in_omim.pdf', height=3, width=4)
     print(p)
     dev.off()
   }

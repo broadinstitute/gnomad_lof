@@ -111,7 +111,7 @@ mean_degree = function(save_plot=F) {
     theme_classic() + oe_x_axis + ylab('Mean number of\nprotein-protein interactions')
   
   if (save_plot) {
-    pdf('4_networks.pdf', height=3, width=4)
+    pdf('4a_networks.pdf', height=3, width=4)
     print(p)
     dev.off()
   }
@@ -275,7 +275,7 @@ plot_expression_metrics_by_constraint = function(save_plot=F, only_canonical=T, 
   }
   
   if (save_plot) {
-    pdf('4_number_of_tissues_expressed_by_constraint.pdf', height=3, width=4)
+    pdf(paste0('4b_', metric, '.pdf'), height=3, width=4)
     print(p)
     dev.off()
   }
