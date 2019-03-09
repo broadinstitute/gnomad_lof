@@ -7,21 +7,24 @@ loftee_maps_ht_path = f'{root}/{subdir}/maps_loftee_{{data_type}}.ht'
 fifty_bp_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_50bp_{{data_type}}.ht'
 end_trunc_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_gerp_{{data_type}}.ht'
 loftee_assess_ht_path = f'{root}/{subdir}/freq_loftee_{{data_type}}.ht'
+variants_per_sample_ht_path = f'{root}/{subdir}/variants_per_sample_{{data_type}}.ht'
 observed_possible_ht_path = f'{root}/{subdir}/observed_possible_expanded_{{data_type}}.ht'
 indels_summary_ht_path = f'{root}/{subdir}/indels_summary_{{data_type}}.ht'
 methylation_hist_file = f'{root}/{subdir}/methylation_hist.txt.bgz'
 
 
-def get_worst_consequence_with_non_coding(ht):
-    def get_worst_csq(csq_list, check_biotype):
+def get_worst_consequence_with_non_coding(ht, split_by_lof: bool = False):
+    def get_worst_csq(csq_list: hl.expr.ArrayExpression, check_biotype: bool, check_lof: bool = False) -> hl.struct:
         all_csq_terms = csq_list.flatmap(lambda x: x.consequence_terms)
+        all_lofs = csq_list.map(lambda x: x.lof) if check_lof else hl.empty_array(hl.tstr)
         worst_csq = hl.literal(CSQ_ORDER).find(lambda x: all_csq_terms.contains(x))
         biotype = csq_list.any(lambda x: (x.biotype == 'protein_coding') &
                                          x.consequence_terms.contains(worst_csq)) if check_biotype else False
-        return hl.struct(worst_csq=worst_csq, protein_coding=biotype)
+        lof = hl.literal(['HC', 'OS', 'LC']).find(lambda x: all_lofs.contains(x))
+        return hl.struct(worst_csq=worst_csq, protein_coding=biotype, lof=lof)
 
     return ht.annotate(**hl.case(missing_false=True)
-                       .when(hl.len(ht.vep.transcript_consequences) > 0, get_worst_csq(ht.vep.transcript_consequences, True))
+                       .when(hl.len(ht.vep.transcript_consequences) > 0, get_worst_csq(ht.vep.transcript_consequences, True, split_by_lof))
                        .when(hl.len(ht.vep.regulatory_feature_consequences) > 0, get_worst_csq(ht.vep.regulatory_feature_consequences, False))
                        .when(hl.len(ht.vep.motif_feature_consequences) > 0, get_worst_csq(ht.vep.motif_feature_consequences, False))
                        .default(get_worst_csq(ht.vep.intergenic_consequences, False)))
@@ -275,6 +278,43 @@ def main(args):
                 loftee_assess_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
             )
 
+        if args.run_variants_per_sample:
+            ht = get_gnomad_public_data(data_type)
+
+            ht = ht.filter(hl.len(ht.filters) == 0)
+            ht = filter_vep_to_canonical_transcripts(ht)
+            ht = get_worst_consequence_with_non_coding(ht, split_by_lof=True)
+            ht = filter_low_conf_regions(ht)
+
+            def build_criteria(ht: hl.Table, data_type: str, index: int = 0):
+                criteria = hl.case(missing_false=True).when(
+                    ht.freq[index].AC == 0, 'Not found').when(
+                    ht.freq[index].AC == 1, 'Singleton').when(
+                    ht.freq[index].AC == 2, 'Doubleton')
+                if data_type == 'genomes':
+                    criteria = criteria.when(ht.freq[index].AF < 1e-3, '< 0.1%')
+                else:
+                    criteria = (criteria
+                                .when(ht.freq[index].AC <= 5, 'AC 3-5')
+                                .when(ht.freq[index].AF < 1e-4, '< 0.01%')
+                                .when(ht.freq[index].AF < 1e-3, '0.01% - 0.1%'))
+                return (criteria
+                        .when(ht.freq[index].AF < 1e-2, '0.1% - 1%')
+                        .when(ht.freq[index].AF < 1e-1, '1% - 10%')
+                        .default('>10%'))
+
+            pops = list(map(lambda x: x.lower(), EXOME_POPS if data_type == 'exomes' else GENOME_POPS))
+            pops = [(pop, hl.eval(ht.freq_index_dict[f'gnomad_{pop}'])) for pop in pops] + [('global', 0)]
+            pop_freq_mapping = {f'bin_{pop}': build_criteria(ht, data_type, index) for pop, index in pops}
+            ht = ht.annotate(**pop_freq_mapping)
+            ht = ht.group_by(*list(pop_freq_mapping), 'worst_csq', 'protein_coding').aggregate(
+                **{f'count_{pop}': hl.agg.sum(ht.freq[index].AC) for pop, index in pops}
+            )
+            ht.write(variants_per_sample_ht_path.format(data_type=data_type), overwrite=args.overwrite)
+            hl.read_table(variants_per_sample_ht_path.format(data_type=data_type)).export(
+                variants_per_sample_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
+            )
+
     if args.methylation_hist:
         methylation_hist = context_ht.aggregate(hl.agg.hist(context_ht.methylation.MEAN, 0, 1, 40))
         data = list(zip(methylation_hist.bin_edges, methylation_hist.bin_freq))
@@ -294,6 +334,7 @@ if __name__ == '__main__':
     parser.add_argument('--run_loftee_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_end_trunc_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_obs_poss', help='Overwrite everything', action='store_true')
+    parser.add_argument('--run_variants_per_sample', help='Overwrite everything', action='store_true')
     parser.add_argument('--assess_loftee', help='Overwrite everything', action='store_true')
     parser.add_argument('--methylation_hist', help='Overwrite everything', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
