@@ -13,18 +13,25 @@ indels_summary_ht_path = f'{root}/{subdir}/indels_summary_{{data_type}}.ht'
 methylation_hist_file = f'{root}/{subdir}/methylation_hist.txt.bgz'
 
 
-def get_worst_consequence_with_non_coding(ht, split_by_lof: bool = False):
-    def get_worst_csq(csq_list: hl.expr.ArrayExpression, check_biotype: bool, check_lof: bool = False) -> hl.struct:
+def get_worst_consequence_with_non_coding(ht):
+    def get_worst_csq(csq_list: hl.expr.ArrayExpression, protein_coding: bool) -> hl.struct:
+        lof = hl.null(hl.tstr)
+        no_lof_flags = hl.null(hl.tbool)
+        if protein_coding:
+            all_lofs = csq_list.map(lambda x: x.lof)
+            lof = hl.literal(['HC', 'OS', 'LC']).find(lambda x: all_lofs.contains(x))
+            # TODO: uncomment and rerun when https://github.com/hail-is/hail/issues/5575 is fixed
+            # csq_list = hl.cond(hl.is_defined(lof), csq_list.filter(lambda x: x.lof == lof), csq_list)
+            # no_lof_flags = hl.or_missing(hl.is_defined(lof),
+            #                              csq_list.any(lambda x: (x.lof == lof) & hl.is_missing(x.lof_flags)))
         all_csq_terms = csq_list.flatmap(lambda x: x.consequence_terms)
-        all_lofs = csq_list.map(lambda x: x.lof) if check_lof else hl.empty_array(hl.tstr)
         worst_csq = hl.literal(CSQ_ORDER).find(lambda x: all_csq_terms.contains(x))
-        biotype = csq_list.any(lambda x: (x.biotype == 'protein_coding') &
-                                         x.consequence_terms.contains(worst_csq)) if check_biotype else False
-        lof = hl.literal(['HC', 'OS', 'LC']).find(lambda x: all_lofs.contains(x))
-        return hl.struct(worst_csq=worst_csq, protein_coding=biotype, lof=lof)
+        return hl.struct(worst_csq=worst_csq, protein_coding=protein_coding, lof=lof, no_lof_flags=no_lof_flags)
 
+    protein_coding = ht.vep.transcript_consequences.filter(lambda x: x.biotype == 'protein_coding')
     return ht.annotate(**hl.case(missing_false=True)
-                       .when(hl.len(ht.vep.transcript_consequences) > 0, get_worst_csq(ht.vep.transcript_consequences, True, split_by_lof))
+                       .when(hl.len(protein_coding) > 0, get_worst_csq(protein_coding, True))
+                       .when(hl.len(ht.vep.transcript_consequences) > 0, get_worst_csq(ht.vep.transcript_consequences, False))
                        .when(hl.len(ht.vep.regulatory_feature_consequences) > 0, get_worst_csq(ht.vep.regulatory_feature_consequences, False))
                        .when(hl.len(ht.vep.motif_feature_consequences) > 0, get_worst_csq(ht.vep.motif_feature_consequences, False))
                        .default(get_worst_csq(ht.vep.intergenic_consequences, False)))
@@ -278,12 +285,12 @@ def main(args):
                 loftee_assess_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
             )
 
-        if args.run_variants_per_sample:
+        if data_type == 'exomes' and args.run_variants_per_sample:
             ht = get_gnomad_public_data(data_type)
 
-            ht = ht.filter(hl.len(ht.filters) == 0)
+            ht = ht.filter((hl.len(ht.filters) == 0))# & get_an_adj_criteria(ht, sample_sizes))
             ht = filter_vep_to_canonical_transcripts(ht)
-            ht = get_worst_consequence_with_non_coding(ht, split_by_lof=True)
+            ht = get_worst_consequence_with_non_coding(ht)
             ht = filter_low_conf_regions(ht)
 
             def build_criteria(ht: hl.Table, data_type: str, index: int = 0):
@@ -305,9 +312,13 @@ def main(args):
 
             pops = list(map(lambda x: x.lower(), EXOME_POPS if data_type == 'exomes' else GENOME_POPS))
             pops = [(pop, hl.eval(ht.freq_index_dict[f'gnomad_{pop}'])) for pop in pops] + [('global', 0)]
+            # ht = ht.group_by('worst_csq', 'lof', 'no_lof_flags', 'protein_coding').aggregate(
+            #     **{pop: hl.agg.group_by(build_criteria(ht, data_type, index),
+            #                             hl.agg.sum(ht.freq[index].AC)) for pop, index in pops}
+            # )  # TODO: melt and explode
             pop_freq_mapping = {f'bin_{pop}': build_criteria(ht, data_type, index) for pop, index in pops}
             ht = ht.annotate(**pop_freq_mapping)
-            ht = ht.group_by(*list(pop_freq_mapping), 'worst_csq', 'protein_coding').aggregate(
+            ht = ht.group_by(*list(pop_freq_mapping), 'worst_csq', 'lof', 'no_lof_flags', 'protein_coding').aggregate(
                 **{f'count_{pop}': hl.agg.sum(ht.freq[index].AC) for pop, index in pops}
             )
             ht.write(variants_per_sample_ht_path.format(data_type=data_type), overwrite=args.overwrite)
