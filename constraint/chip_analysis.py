@@ -11,7 +11,7 @@ import numpy as np
 from scipy import stats
 
 
-# upload gnomad sites vcf for exomes 
+# upload gnomad sites ht for exomes 
 ht = hl.read_table(public_exomes_ht_path())
 
 # subset to chromosome 20 to create test dataset
