@@ -30,9 +30,9 @@ plot_titles = c(
 labels = c('a','b','c','d','e','f','g','h','i','j','k','l','m')
 
 # Load data
-autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/', version = 'v1.1'))
-chr20 = read_tsv(get_or_download_file('chr20.tsv.gz', subfolder = 'variant_qc/'))
-concordance = read_tsv(get_or_download_file('concordance.tsv.gz', subfolder = 'variant_qc/'))
+# autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/', version = 'v1.1'))
+# chr20 = read_tsv(get_or_download_file('chr20.tsv.gz', subfolder = 'variant_qc/'))
+# concordance = read_tsv(get_or_download_file('concordance.tsv.gz', subfolder = 'variant_qc/'))
 
 # General format
 format_supp_plot = function(p, title=NA){
@@ -98,7 +98,12 @@ get_legend_row = function(){
     scale_color_manual(name='', values=model_colors, labels=model_names) +
     theme(legend.position="bottom")
   plot = ggarrange(get_legend(p))
-  plot = ggarrange(plotlist = list(ggplot() + geom_blank(), get_legend(p),  ggplot() + geom_blank()), ncol=3)
+  plot = ggarrange(plotlist = list(
+    ggplot() + geom_blank() + theme(panel.border = element_blank()), 
+    get_legend(p),  
+    ggplot() + geom_blank() + theme(panel.border = element_blank())), 
+    ncol=3,
+    widths = c(0.01, 0.98, 0.01))
   
   return(plot %>% annotate_figure(
     left = text_grob("\n", rot = 90)
