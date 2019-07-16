@@ -30,9 +30,9 @@ plot_titles = c(
 labels = c('a','b','c','d','e','f','g','h','i','j','k','l','m')
 
 # Load data
-# autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/', version = 'v1.1'))
-# chr20 = read_tsv(get_or_download_file('chr20.tsv.gz', subfolder = 'variant_qc/'))
-# concordance = read_tsv(get_or_download_file('concordance.tsv.gz', subfolder = 'variant_qc/'))
+autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/', version = 'v1.1'))
+chr20 = read_tsv(get_or_download_file('chr20.tsv.gz', subfolder = 'variant_qc/'))
+concordance = read_tsv(get_or_download_file('concordance.tsv.gz', subfolder = 'variant_qc/'))
 
 # General format
 format_supp_plot = function(p, title=NA){
