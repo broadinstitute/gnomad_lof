@@ -30,7 +30,7 @@ plot_titles = c(
 labels = c('a','b','c','d','e','f','g','h','i','j','k','l','m')
 
 # Load data
-autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/'))
+autosomes = read_tsv(get_or_download_file('autosomes.tsv.gz', subfolder = 'variant_qc/', version = 'v1.1'))
 chr20 = read_tsv(get_or_download_file('chr20.tsv.gz', subfolder = 'variant_qc/'))
 concordance = read_tsv(get_or_download_file('concordance.tsv.gz', subfolder = 'variant_qc/'))
 
@@ -98,7 +98,12 @@ get_legend_row = function(){
     scale_color_manual(name='', values=model_colors, labels=model_names) +
     theme(legend.position="bottom")
   plot = ggarrange(get_legend(p))
-  plot = ggarrange(plotlist = list(ggplot() + geom_blank(), get_legend(p),  ggplot() + geom_blank()), ncol=3)
+  plot = ggarrange(plotlist = list(
+    ggplot() + geom_blank() + theme(panel.border = element_blank()), 
+    get_legend(p),  
+    ggplot() + geom_blank() + theme(panel.border = element_blank())), 
+    ncol=3,
+    widths = c(0.01, 0.98, 0.01))
   
   return(plot %>% annotate_figure(
     left = text_grob("\n", rot = 90)
@@ -142,37 +147,7 @@ pr_plot = function(same_scale = F){
 }
 
 # Rare variants metrics plots
-rare_variants_metrics_plot = function(){
-  
-  #dnms
-  dnms = autosomes %>%
-    filter(rank_id == 'rank') %>%
-    group_by(data_type, model, snv, bin) %>%
-    summarise(n_de_novo=sum(n_de_novo)) %>%
-    group_by(data_type, model, snv) %>%
-    arrange(bin) %>%
-    mutate(cum_dnm = cumsum(n_de_novo)/n_trios[data_type])
-  
-  dnm_plots=list()
-  for(x in c('exomes', 'genomes')){
-    for(y in c(TRUE, FALSE)){
-      plot_data = dnms %>%
-        filter(data_type == x & 
-                 snv == y)
-      p = ggplot(plot_data, aes(bin, cum_dnm, col=model))  + 
-        geom_point() + 
-        geom_point(data=plot_data %>% filter(model=='RF'), aes(bin, cum_dnm, col=model)) +
-        geom_vline(xintercept=cutoffs[as.character(y)], linetype='dashed')
-      dnm_plots = c(dnm_plots,
-                    list(format_supp_plot(p))
-      )
-    }
-  }
-  dnm_row = get_plot_row(dnm_plots, 
-                         'Model percentile', 
-                         bquote(atop(~ italic('De novo') ~ 'calls per child', '(cumulative)')), 
-                         labels = labels[1:4]
-  )
+rare_variants_metrics_plot = function(bi_allelic_only=F, singleton_only=F, export=F){
   
   #trans singletons
   trans_singletons = chr20 %>%
@@ -199,10 +174,44 @@ rare_variants_metrics_plot = function(){
   trans_singletons_row = get_plot_row(trans_singletons_plots, 
                                       'Model percentile', 
                                       'Transmitted singletons\n(chrom 20, cumulative)', 
-                                      labels = labels[5:8]
+                                      labels = labels[1:4]
   )
   
-  #trans singletons
+  #dnms
+  dnms = autosomes %>%
+    filter(
+      rank_id == 'rank' & 
+        (!bi_allelic_only | bi_allelic) & 
+        (!singleton_only | singleton)
+    ) %>%
+    group_by(data_type, model, snv, bin) %>%
+    summarise(n_de_novo=sum(n_de_novo_sites_no_lcr)) %>%
+    group_by(data_type, model, snv) %>%
+    arrange(bin) %>%
+    mutate(cum_dnm = cumsum(n_de_novo)/n_trios[data_type])
+  
+  dnm_plots=list()
+  for(x in c('exomes', 'genomes')){
+    for(y in c(TRUE, FALSE)){
+      plot_data = dnms %>%
+        filter(data_type == x & 
+                 snv == y)
+      p = ggplot(plot_data, aes(bin, cum_dnm, col=model))  + 
+        geom_point() + 
+        geom_point(data=plot_data %>% filter(model=='RF'), aes(bin, cum_dnm, col=model)) +
+        geom_vline(xintercept=cutoffs[as.character(y)], linetype='dashed')
+      dnm_plots = c(dnm_plots,
+                    list(format_supp_plot(p))
+      )
+    }
+  }
+  dnm_row = get_plot_row(dnm_plots, 
+                         'Model percentile', 
+                         bquote(atop(~ italic('De novo') ~ 'calls per child', '(cumulative)')), 
+                         labels = labels[5:8]
+  )
+  
+  #validated DNMs
   validated_dnm = autosomes %>%
     filter(rank_id == 'rank') %>%
     group_by(data_type, model, snv, bin) %>%
@@ -231,8 +240,8 @@ rare_variants_metrics_plot = function(){
   )
   plot = ggarrange(
     get_header_row(2),
-    dnm_row, 
     trans_singletons_row, 
+    dnm_row,
     validated_dnm_row,
     get_legend_row(),
     nrow = 5, 
@@ -256,7 +265,7 @@ efigure2 = function() {
 }
 
 efigure3 = function() {
-  e3 = rare_variants_metrics_plot()
+  e3 = rare_variants_metrics_plot(bi_allelic_only = T)
   
   pdf("extended_data_figure3.pdf", width = 8, height = 7)
   print(e3)
