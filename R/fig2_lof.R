@@ -10,10 +10,6 @@ figure2b = function(save_plot=F) {
   loftee_filters = loftee %>%
     filter(!is.na(lof) & variant_count > 20) %>%
     mutate(
-      # lof_filter = case_when(lof == 'HC' ~ 'HC',
-      #                        lof == 'OS' ~ 'OS',
-      #                        grepl(',', lof_filter) ~ 'MULTIPLE',
-      #                        TRUE ~ lof_filter),
       lof_filter = case_when(lof == 'HC' ~ 'High Confidence',
                              lof == 'OS' ~ 'Other Splice',
                              grepl(',', lof_filter) ~ 'Multiple filters',
@@ -166,7 +162,7 @@ supp_loftee_flag = function() {
   mis_maps = maps_data %>% filter(protein_coding & csq == 'missense') %$% maps
   
   loftee_flags = loftee %>%
-    filter(!is.na(lof) & variant_count > 20) %>%
+    filter(lof == 'HC' & variant_count > 20) %>%
     mutate(lof_flags = case_when(is.na(lof_flags) & lof == 'HC' ~ 'HC',
                                  is.na(lof_flags) & lof == 'OS' ~ 'OS',
                                  is.na(lof_flags) & lof == 'LC' ~ 'LC',
@@ -196,7 +192,9 @@ supp_loftee_flag = function() {
   
   
 }
+
 ds_melt = load_downsampled_data()
+
 figure2c = function() {
   sumbounds = ds_melt %>%
     filter(variant_type == 'LoF' & func == 'sum') %>% group_by(obs_exp) %>% 

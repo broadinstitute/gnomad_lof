@@ -1,3 +1,4 @@
+gene_data = load_constraint_data()
 
 plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Synonymous', 'pLoF'),
                              expected_cutoff = 10) {
@@ -18,8 +19,7 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
                                        csq == 'missense_variant' ~ 'Missense',
                                        csq == 'synonymous_variant' ~ 'Synonymous',
                                        TRUE ~ format_vep_category(csq)),
-                             'pLoF', 'Missense', 'Synonymous'
-                             )) %>%
+                             'pLoF', 'Missense', 'Synonymous')) %>%
     left_join(gene_data, by=c('ensg' = 'gene_id')) %>%
     filter(exp_lof >= expected_cutoff) %>%
     count(csq, group, symbol, oe_lof_upper_bin) %>%
@@ -28,7 +28,7 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
     left_join(sample_sizes) %>%
     group_by(oe_lof_upper_bin, csq) %>%
     do(ps_tst(.)) %>% ungroup
-  
+
   de_novo_results = de_novo_results %>%
     filter(csq %in% csqs_to_plot) %>%
     mutate(csq=fct_drop(csq))
@@ -132,7 +132,7 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
     count(csq, group, percentile, wt = n) %>%
     left_join(sample_sizes) %>%
     filter(csq %in% csqs_to_plot) %>%
-    mutate(rate_ratio = nn / n_indiv)
+    mutate(rate_ratio = n / n_indiv)
   
   scaled_data %>%
     ggplot + aes(x = percentile, color = csq, shape = group, y = rate_ratio, fill = csq) + 
@@ -144,23 +144,27 @@ plot_rare_disease = function(save_plot=F, phenotype = 'ddid', csqs_to_plot=c('Sy
     theme_classic() + geom_smooth()
   
   textp = ifelse(phenotype == 'ddid', 45, 7)
-  scaled_data %>%
-    group_by(csq, group) %>%
-    do(l=loess(rate_ratio ~ percentile, data = .)) %>%
-    augment(l) %>%
+  p_loess_ratio = scaled_data %>%
+    nest(-csq, -group) %>%
+    mutate(l=map(data, ~ loess(rate_ratio ~ percentile, data = .)),
+           augmented=map(l, augment)) %>%
+    unnest(augmented) %>%
     group_by(csq, percentile) %>%
-    summarize(loess_ratio = sum(.fitted * as.integer(group == phenotype)) / 
+    summarize(loess_ratio = sum(.fitted * as.integer(group == phenotype)) /
                 sum(.fitted * as.integer(group == 'Control'))) %>%
-    ggplot + aes(x = percentile, color = csq, y = loess_ratio, fill = csq) + 
-    geom_line(size=2) + 
+    ggplot + aes(x = percentile, color = csq, y = loess_ratio, fill = csq) +
+    geom_line(size=2) +
     scale_color_manual(values = colors, guide=F) +
     scale_fill_manual(values = colors, guide=F) +
     annotate('text', x = 99, y = 0.93*textp, vjust=1, hjust=1, label='synonymous', color = color_syn, size = 3) +
     annotate('text', x = 99, y = textp, vjust=1, hjust=1, label='pLoF', color = color_lof, size = 3) +
-    theme_classic() #+ scale_y_log10()
+    theme_classic()
   
   if (save_plot) {
     pdf(paste0('rare_disease_', phenotype, '.pdf'), height=3, width=4)
+    print(p)
+    dev.off()
+    png(paste0('rare_disease_', phenotype, '.png'), height=3*300, width=5*300, res=300)
     print(p)
     dev.off()
   }
@@ -246,17 +250,34 @@ generate_background_sets = function() {
 partitioning_heritability_enrichment = function(save_plot=F, normalize=F) {
   sum_stats = load_sum_stats()
   
-  enrichment_data = sum_stats %>%
+  # Broken in tidyr >= 0.8  
+  # enrichment_data = sum_stats %>%
+  #   filter(cond == 'all100' &
+  #            grepl('oe_lof_upper_quantile_', name) &
+  #            (is.na(cor_rm0.2) | cor_rm0.2 == 0)  # Select uncorrelated variables
+  #   ) %>%
+  #   group_by(name) %>%
+  #   summarize(meta_enrichment = metagen(enrichment, enrichment_SE)$TE.random,
+  #             meta_sd = metagen(enrichment, enrichment_SE)$seTE.random) %>%
+  #   mutate(decile = as.integer(str_sub(name, -1)),
+  #          enrichment = ifelse(normalize, meta_enrichment / mean(meta_enrichment), meta_enrichment)
+  #   )
+  
+  filt_sum_stats = sum_stats %>%
     filter(cond == 'all100' &
              grepl('oe_lof_upper_quantile_', name) &
              (is.na(cor_rm0.2) | cor_rm0.2 == 0)  # Select uncorrelated variables
-           ) %>%
-    group_by(name) %>%
-    summarise(meta_enrichment = metagen(enrichment, enrichment_SE)$TE.random,
-              meta_sd = metagen(enrichment, enrichment_SE)$seTE.random) %>%
+    ) 
+  enrichment_data = ddply(filt_sum_stats, 'name', function(x) {
+    enrichment = x$enrichment
+    enrichment_SE = x$enrichment_SE
+    meta_enrichment = metagen(enrichment, enrichment_SE)$TE.random
+    meta_sd = metagen(enrichment, enrichment_SE)$seTE.random
+    return(data.frame(meta_enrichment, meta_sd))
+  }) %>%
     mutate(decile = as.integer(str_sub(name, -1)),
            enrichment = ifelse(normalize, meta_enrichment / mean(meta_enrichment), meta_enrichment)
-      )
+    )
   
   p = enrichment_data %>%
     ggplot + aes(x = decile, y = meta_enrichment,
@@ -267,6 +288,9 @@ partitioning_heritability_enrichment = function(save_plot=F, normalize=F) {
   
   if (save_plot) {
     pdf('5b_partitioning_heritability_enrich.pdf', height=3, width=4)
+    print(p)
+    dev.off()
+    png('5b_partitioning_heritability_enrich.png', height=3*300, width=4*300, res=300)
     print(p)
     dev.off()
   }
@@ -284,7 +308,6 @@ enriched_traits = function(save_plot=F) {
   
   highlights = continuous_data %>%
     arrange(desc(logp)) %>%
-    mutate(description = gsub('\\*', '', description)) %>%
     # {filter(., logp > bonf_threshold) %>% select(logp, description) %>% print} %>%
     head(5)
   
@@ -306,13 +329,24 @@ enriched_traits = function(save_plot=F) {
                        labels=as.expression(sapply(p_thres, function(x) bquote(10^-.(x))))) +
     scale_color_identity(guide=FALSE) +
     geom_hline(yintercept = bonf_threshold, linetype='dashed', col = 'darkgray') +
-    theme(axis.text.x = element_text(angle = 30, hjust = 1)) 
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
   
-  if (save_plot) {
+  continuous_data %>%
+    select(-name, -cond) %>% 
+    select(pheno, description, Domain, p, enrichment, enrichment_SE, everything()) %>%
+    arrange(p) %T>%
+    {write.table(., file='data/all_traits.tsv', quote = F, row.names=F, sep='\t')} %>%
+    filter(., p < 0.0001) %>%
+    select(description, p, enrichment, enrichment_SE, h2_liability) %>%
+    mutate(p = format(p, scientific = T, digits=3)) %>%
+    mutate_if(is.numeric, round, digits=3) %>%
+    write.table(file='data/filtered_traits.tsv', quote = F, row.names=F, sep='\t')
+  
+   if (save_plot) {
     pdf('5c_enriched_traits.pdf', height=3, width=5)
     print(p)
     dev.off()
-    png('5d_enriched_traits.png', height=3*300, width=5*300, res=300)
+    png('5c_enriched_traits.png', height=3*300, width=5*300, res=300)
     print(p)
     dev.off()
   }

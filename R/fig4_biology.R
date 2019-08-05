@@ -81,6 +81,7 @@ mean_degree = function(save_plot=F) {
   #' ## Results
   #' 
   #' Check degree distribution
+  
   cent.dat <- degree_data %>%
     filter(exp_lof > 10) %>%
     group_by(oe_lof_upper_bin) %>%
@@ -154,6 +155,19 @@ constrained_v_unconstrained_transcript = function(save_plot=F, oe_threshold = NU
     summary %>%
     print
   
+  transcript_data %>%
+    filter(gene_id %in% genes_with_constrained_unconstrained_transcripts$gene_id) %>%
+    left_join(tx_summary) %>%
+    group_by(gene_id,
+             constrained = ifelse(oe_lof_upper < oe_threshold, 'constrained', 'unconstrained')) %>%
+    summarize(mean_cds_length = mean(cds_length, na.rm=T), mean_expression=mean(mean_expression, na.rm=T)) %>%
+    # group_by(constrained) %>% summarize(mean(mean_expression))
+    group_by(gene_id) %>% 
+    summarize(delta = mean(mean_expression*(constrained == 'constrained')) - mean(mean_expression*(constrained == 'unconstrained'))) %>%
+    summarize(mean_delta = mean(delta))
+    # ggplot + aes(x = delta) + geom_density()
+    
+  
   # Histogram of difference
   for_paired_plot = transcript_data %>%
     filter(gene_id %in% genes_with_constrained_unconstrained_transcripts$gene_id) %>%
@@ -212,6 +226,12 @@ plot_expression_metrics_by_constraint = function(save_plot=F, only_canonical=T, 
     
     plot_data = all_tx %>%
       filter(!only_canonical | canonical)
+    
+    cor.test(plot_data$metric, plot_data$oe_lof_upper)
+    cor.test(plot_data$metric, plot_data$oe_lof_upper, method='spearman')
+    all_tx %>%
+      lm(metric ~ oe_lof_upper, .) %>% 
+      summary
   
     collapsed_tx = plot_data %>%
       group_by(x_axis) %>%

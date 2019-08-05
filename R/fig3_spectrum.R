@@ -35,7 +35,7 @@ gene_list_spectrum = function(save_plot=F,
     ungroup %>%
     mutate(
       gene_list = fct_recode(gene_list, 'Autosomal Recessive' = "all_ar", 'Autosomal Dominant' = "all_ad"),
-      gene_list = fct_relevel(gene_list, 'Haploinsufficient')) 
+      gene_list = fct_relevel(gene_list, 'Haploinsufficient'))
   
   gene_list_spectrum_data %>%
     filter(gene_list %in% c('Haploinsufficient', 'Autosomal Dominant', 'Autosomal Recessive', 'Olfactory Genes')) %>%
@@ -74,9 +74,38 @@ gene_list_spectrum = function(save_plot=F,
   return(p3a)
 }
 
+acmg_spectrum = function(save_plot=F) {
+  acmg_spectrum_data = gene_data %>%
+    left_join(load_all_gene_list_data()) %>%
+    mutate(presence = 1) %>%
+    complete(gene_list, oe_lof_upper_bin, fill = list(presence = 0)) %>%
+    count(gene_list, oe_lof_upper_bin, wt = presence) %>%
+    group_by(gene_list) %>%
+    mutate(prop_in_bin = n / sum(n)) %>% 
+    ungroup %>%
+    filter(gene_list == 'ACMG_2_0')
+  
+  p = acmg_spectrum_data %>%
+    ggplot + aes(x = oe_lof_upper_bin, y = prop_in_bin) + 
+    geom_bar(position='dodge', stat='identity', width=0.9, fill='darkblue') + 
+    theme_classic() + 
+    ylab('Percent of ACMG59') + oe_x_axis + 
+    scale_y_continuous(labels=percent_format(accuracy = 1))
+  
+  if (save_plot) {
+    pdf('sX_acmg_gene_list.pdf', height = 3, width = 5)
+    print(p)
+    dev.off()
+  }
+  return(p)
+}
+
 sv_spectrum = function(save_plot=F) {
   gene_plus_sv = gene_data %>%
     left_join(sv_data)
+  
+  lm(observed_rare_biallelic_LoF_deletions/expected_rare_biallelic_LoF_deletions ~ oe_lof_upper, gene_plus_sv) %>%
+    summary
   
   gene_plus_sv %>%
     # filter(!is.na(expected_rare_biallelic_LoF_deletions)) %>%
@@ -125,7 +154,7 @@ get_proportion_in_gene_lists = function(gene_data) {
   gene_lists %>%
     inner_join(gene_data) %>%
     count(gene_list, oe_lof_upper_bin) %>%
-    add_count(gene_list, wt = n) %>%
+    add_count(gene_list, wt = n, name = 'nn') %>%
     mutate(prop_in_bin = n / nn,
            sem = 1.96 * sqrt(prop_in_bin * (1 - prop_in_bin) / nn)) %>%
     return

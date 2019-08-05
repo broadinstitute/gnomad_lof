@@ -1,3 +1,4 @@
+source('fig1_summary.R')
 data_type = 'exomes'
 obs_poss_ds = load_observed_possible_data(data_type)
 indel_summary = load_indel_data(data_type)
@@ -27,21 +28,33 @@ num_observed_by_class = function(save_plot=F) {
   return(pe4a)
 }
 
-prop_observed_by_class = function(save_plot=F, plot_log=T) {
+prop_observed_by_class = function(save_plot=F, plot_log=T, split_methylation=F) {
+  regroupings = c('variant_type', 'downsampling')
+  if (split_methylation) {
+    regroupings = c(regroupings, 'methylation_level')
+  }
   pe4b = obs_poss_ds %>%
+    mutate(methylation_level = as.factor(methylation_level)) %>%
     filter(csq == 'synonymous' & downsampling >= 100 & coverage >= 30) %>%
-    group_by(variant_type, downsampling) %>%
+    group_by_at(regroupings) %>%
     summarize(observed = sum(observed), possible = sum(as.numeric(possible))) %>%
-    ggplot + aes(x = downsampling, y = observed/possible, color = variant_type) %>%
+    ggplot + aes(x = downsampling, y = observed/possible, color = variant_type) +
     geom_line(lwd=2) + theme_classic() + 
     scale_color_manual(values=variant_type_colors, name='') + 
     downsampling_x_axis(log=plot_log) +
     ylab('Percent observed') + guides(color=F)
   
+  if (split_methylation) {
+    pe4b = pe4b + aes(linetype = methylation_level) + 
+      scale_linetype_manual(name='Methylation\nLevel', limits=c(2, 1, 0),
+                            labels=c('High', 'Medium', 'Unmethylated'),
+                            values=c('dotted', '22', 'solid'))
+  }
+
   if (plot_log) pe4b = pe4b + scale_y_log10(labels=percent)
   
   if (save_plot) {
-    pdf('e4b_prop_observed_by_class.pdf', height=3, width=4)
+    pdf(paste0('e4b_prop_observed_by_class', ifelse(split_methylation, '_methylation_split', ''), '.pdf'), height=3, width=4)
     print(pe4b)
     dev.off()
   }
@@ -167,14 +180,142 @@ efigure4 = function() {
   e4b = prop_observed_by_class()
   e4c = titv()
   e4d = observed_by_function()
-  
-  pdf('extended_data_figure4.pdf', height=6, width=8)
-  ggarrange(e4a, e4b, e4c, e4d, ncol = 2, nrow = 2, labels = 'auto', align = 'v')
+  e4e = downsampling_by_pop()
+  e4f = downsampling_by_pop(plot_log=F)
+  pdf('extended_data_figure4.pdf', height=9, width=8.5)
+  ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v')
   dev.off()
-  png('extended_data_figure4.png', height=6, width=8, units = 'in', res=300)
-  ggarrange(e4a, e4b, e4c, e4d, ncol = 2, nrow = 2, labels = 'auto', align = 'v')
+  png('extended_data_figure4.png', height=9, width=8.5, units = 'in', res=300)
+  ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v')
   dev.off()
 }
+
+sfigure3 = function() {
+  fig1split = summary_figure('exomes', group_splice = T, intergenic = F,
+                             maps_limits=c(NA, 0.18), po_limits=c(NA, 1), split_methylation = T, keep_x_labels = T)
+  s3a = fig1split[[2]]
+  s3b = prop_observed_by_class(split_methylation=T)
+  pdf('supplementary_figure1.pdf', height=7, width=8)
+  ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  dev.off()
+  png('supplementary_figure1.png', height=7, width=8, units = 'in', res=300)
+  ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  dev.off()
+}
+
+ds_data = load_downsampled_gene_data()
+
+downsampling_by_pop = function(save_plot=F, plot_log=T) {
+  collapsed_ds = ds_data %>% filter(canonical) %>%
+    group_by(downsampling, pop) %>%
+    summarize_if(is.numeric, sum, na.rm=T) %>% ungroup
   
+  collapsed_ds = ds_data %>% filter(canonical) %>%
+    group_by(downsampling, pop) %>%
+    summarize_at(vars(exp_syn:caf), .funs = funs(sum = sum(., na.rm=T),
+                                                 over5raw = sum(. >= 5, na.rm=T)/n(),
+                                                 over10raw = sum(. >= 10, na.rm=T)/n(),
+                                                 over20raw = sum(. >= 20, na.rm=T)/n(),
+                                                 over5 = sum(. >= 5, na.rm=T)/sum(. > 0, na.rm=T),
+                                                 over10 = sum(. >= 10, na.rm=T)/sum(. > 0, na.rm=T),
+                                                 over20 = sum(. >= 20, na.rm=T)/sum(. > 0, na.rm=T))
+    ) %>% ungroup
+  
+  all_pops = collapsed_ds %>%
+    gather(key='metric', value='count', -downsampling, -pop) %>%
+    separate(metric, into = c('obs_exp', 'variant_type', 'func')) %>%
+    mutate(variant_type = fct_recode(variant_type, 'Synonymous' = 'syn', 'Missense' = 'mis', 'LoF' = 'lof'),
+           obs_exp = fct_recode(obs_exp, 'Expected' = 'exp', 'Observed' = 'obs'))
+  
+  all_pops %>%
+    filter(func == 'sum' & pop != 'global' & downsampling <= 8128 &
+             # obs_exp == 'n'
+             obs_exp == 'Observed' & variant_type == 'LoF'
+    ) %>%
+    ggplot + aes(x = downsampling, y = count, color = pop) +
+    geom_line() + scale_color_manual(values=pop_colors, labels=pop_names)
+  
+  pop_ds_data = all_pops %>%
+    filter(func == 'sum' & 
+             # pop != 'global' & 
+             # downsampling <= 8128 &
+             obs_exp == 'n'  # includes indels
+           # obs_exp == 'Observed' & variant_type == 'LoF'  # constraint-variants only
+    ) %>%
+    group_by(pop) %>%
+    arrange(downsampling) %>%
+    mutate(variant_diff=count-lag(count),
+           sample_diff=downsampling-lag(downsampling),
+           variants_per_sample = variant_diff / sample_diff) %>%
+    filter(sample_diff != 40)
+  
+  top = pop_ds_data %$% max(variants_per_sample)
+  right = pop_ds_data %$% max(downsampling)
+  
+  pop_colors[['global']] = 'black'
+  pop_names[['global']] = 'gnomAD'
+  p = pop_ds_data %>%
+    ggplot + aes(x = downsampling, y = variants_per_sample, color = pop) +
+    geom_line(size=1) + xlab('Sample size') + theme_classic() + 
+    ylab('New pLoF variants\nper additional sample') + coord_cartesian(ylim=c(0, top)) +
+    scale_color_manual(values=pop_colors, guide=F)
+  
+  current = 1
+  for(i in pop_ds_data %$% unique(pop)) {
+    p = p + annotate('text', x = right, hjust = 1, y = top * current,
+                     size = 3,
+                     label = pop_names[[i]], color=pop_colors[[i]])
+    current = current - 0.07
+  }
+  
+  if (plot_log) {
+    p = p + scale_x_log10(labels=comma, breaks=ds_breaks_log)
+  } else {
+    p = p + scale_x_continuous(labels=comma, breaks=ds_breaks)
+  }
+  
+  if (save_plot) {
+    pdf('e4d_variants_per_new_sample.pdf', height=3, width=4)
+    print(p)
+    dev.off()
+  }
+  return(p)
+}
 
+indel_summary = function() {
+  genome_indel_ds_file = get_or_download_file('indels_summary_genomes.downsampling.txt.bgz', subfolder = 'summary_results/')
+  genome_indel_ds_file = read_delim(gzfile(genome_indel_ds_file), delim='\t')
+  genome_indel_ds_file %>% 
+    filter(worst_csq == 'intergenic_variant' & abs(indel_length) <= 10) %>% 
+    group_by(indel_length, downsampling) %>% 
+    summarize(singletons=sum(singletons), observed=sum(observed)) %>% 
+    filter(downsampling == 15708) %>% ungroup %>%
+    ggplot + aes(x = indel_length, y = singletons/observed) +
+    geom_bar(stat='identity')
+}
 
+site_statistics = function(data_type) {
+  obs_poss_sites = load_observed_possible_sites_data(data_type)
+  
+  obs_poss_sites %>%
+    filter(coverage >= 0) %>%
+    summarize(observed = sum(n_sites_observed), possible = sum(n_sites_possible),
+              prop = observed / possible) %>%
+    print
+  
+  obs_poss_sites %>%
+    filter(coverage >= 30) %>%
+    summarize(observed = sum(n_sites_observed), possible = sum(n_sites_possible),
+              prop = observed / possible) %>%
+    print
+  
+  obs_poss_sites %>%
+    filter(coverage >= 0) %>%
+    arrange(desc(coverage)) %>%
+    mutate(n_sites_observed_c = cumsum(n_sites_observed),
+           n_sites_possible_c = cumsum(n_sites_possible),
+           prop_observed_c = n_sites_observed_c / n_sites_possible_c) %>%
+    ggplot + aes(x = coverage, y = prop_observed_c) + 
+    geom_line(size = 2) + 
+    xlab('Coverage >= X') + ylab('Cumulative proportion observed')
+}

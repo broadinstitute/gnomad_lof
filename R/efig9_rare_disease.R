@@ -22,7 +22,8 @@ constraint_by_omim_discovery = function(save_plot=F, histograms=T) {
     ggplot + aes(x = year, y = oe_lof_upper) + geom_point() + geom_smooth()
   
   constraint_with_year %>%
-    ggplot + aes(x = year, y = oe_lof_upper, group = year) + geom_boxplot()
+    ggplot + aes(x = year, y = oe_lof_upper, group = year) + 
+    geom_boxplot(fill='lightblue') + xlab('Year') + ylab('LOEUF') + theme_classic()
   
   if (histograms) {
     p = constraint_with_year %>%
@@ -36,7 +37,7 @@ constraint_by_omim_discovery = function(save_plot=F, histograms=T) {
     p = constraint_with_year %>%
       filter(exp_lof > 10) %>%
       count(oe_lof_upper_bin, discoverybyNGS) %>%
-      add_count(discoverybyNGS, wt=n) %>%
+      add_count(discoverybyNGS, wt=n, name='nn') %>%
       mutate(prop_in_bin = n / nn,
              sem = 1.96 * sqrt(prop_in_bin * (1 - prop_in_bin) / nn)) %>%
       ggplot + aes(x = oe_lof_upper_bin, y = prop_in_bin, ymin = prop_in_bin - sem, ymax = prop_in_bin + sem, color = discoverybyNGS) + 
@@ -129,7 +130,10 @@ scz_rare_variants = function(save_plot=F, csqs_to_plot=c('Synonymous', 'pLoF')) 
     oe_x_axis + geom_hline(yintercept = 1, linetype = "dashed")
   
   if (save_plot) {
-    pdf('e8b_scz.pdf', height=3, width=4)
+    pdf('e9d_scz.pdf', height=3, width=4)
+    print(p)
+    dev.off()
+    png('e9d_scz.png', height=3*300, width=4*300, res=300)
     print(p)
     dev.off()
   }
@@ -140,11 +144,11 @@ proportion_in_omim = function(save_plot=F) {
   omim_data = load_omim_by_year_data()
   gene_omim_data = gene_data %>%
     mutate(in_omim = gene_id %in% omim_data$Ensembl.Gene.ID)
-    
+  
   gene_omim_data %>%
     summarize(ttest = list(t.test(oe_lof_upper ~ in_omim))) %>%
     tidy(ttest)
-
+  
   p = gene_omim_data %>%
     group_by(oe_lof_upper_bin) %>%
     summarize(num_in_omim = sum(in_omim, na.rm=T), n=n(), 
@@ -160,6 +164,26 @@ proportion_in_omim = function(save_plot=F) {
     dev.off()
   }
   return(p)
+}
+
+proportion_in_omim_powered = function(save_plot=F) {
+  omim_data = load_omim_by_year_data()
+  gene_omim_data = gene_data %>%
+    filter(!is.na(exp_lof)) %>%
+    mutate(in_omim = gene_id %in% omim_data$Ensembl.Gene.ID,
+           powered=exp_lof > 10)
+  
+  # gene_omim_data %>%
+  #   ggplot + aes(x = in_omim, y = exp_lof) + 
+  #   geom_boxplot() + scale_y_log10()
+  
+  gene_omim_data %>% count(powered, in_omim) %>% print
+  
+  gene_omim_data %>% count(powered, in_omim) %$% matrix(n, nrow = 2, ncol = 2) %>% fisher.test
+
+  gene_omim_data %>% left_join(load_all_gene_list_data()) %>%
+    filter(gene_list == 'ACMG_2_0' & !powered) %>%
+    select(gene, obs_lof, exp_lof, oe_lof, oe_lof_upper, pLI) %>% print
 }
 
 efigure9 = function() {

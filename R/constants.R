@@ -1,12 +1,23 @@
+# install.packages(c('tidyverse', 'Hmisc', 'devtools', 'broom', 'plotly'))
+# install.packages(c('slackr', 'magrittr', 'gapminder', 'readr', 'purrr'))
+# install.packages(c('skimr', 'gganimate', 'gghighlight', 'plotROC', 'naniar'))
+# install.packages(c('BiocManager', 'cowplot', 'corrplot', 'corrr', 'ggridges'))
+# install.packages(c('ggpubr', 'meta', 'tidygraph', 'pbapply', 'RMySQL'))
+# BiocManager::install('STRINGdb', version = '3.8')
+# devtools::install_github('VPetukhov/ggrastr')
+# devtools::install_github('hafen/trelliscopejs')
+# devtools::install_github('thomasp85/patchwork')
+
 options(stringsAsFactors = F)
 library(Hmisc)
+library(plyr)
 library(tidyverse)
 library(broom)
 library(plotly)
 library(slackr)
 library(magrittr)
 library(scales)
-library(trelliscopejs)  # devtools::install_github("hafen/trelliscopejs")
+library(trelliscopejs)
 library(gapminder)
 library(skimr)
 library(gghighlight)
@@ -19,22 +30,23 @@ library(readxl)
 library(ggridges)
 library(grid)
 library(ggpubr)
-library(ggrastr) # devtools::install_github('VPetukhov/ggrastr')
+library(ggrastr)
 library(grDevices)
 library(meta)
-# install.packages("BiocManager")
-library(STRINGdb) # BiocManager::install("STRINGdb", version = "3.8")
+library(STRINGdb)
 library(tidygraph)
 library(rlang)
 library(pbapply)
 library(ggrepel)
 library(RMySQL)
 library(cowplot)
-# install.packages(c('tidyverse', 'broom', 'plotly', 'slackr', 'magrittr', 'gapminder', 'readr', 'purrr', 'skimr', 'gganimate', 'gghighlight', 'plotROC', 'naniar'))
+library(ggwordcloud)
 
 data_dir = './data/'
 suppressWarnings(dir.create(data_dir))
-data_url = 'https://storage.googleapis.com/gnomad-public/papers/2019-flagship-lof/v1.0/'
+get_data_url = function(version = 'v1.0') {
+  return(paste0('https://storage.googleapis.com/gnomad-public/papers/2019-flagship-lof/', version, '/'))
+}
 
 slackr_setup(channel='#constraint')
 post_slack = FALSE
@@ -234,6 +246,7 @@ generate_ci = function(obs, exp, alpha=0.05) {
   return(data.frame(lower=low, upper=high))
 }
 
+
 constraint_metric_name = 'LOEUF'
 oe_x_label = paste(constraint_metric_name, 'decile')
 label_function = function(x) {
@@ -242,6 +255,16 @@ label_function = function(x) {
 }
 oe_x_axis = list(xlab(oe_x_label),
                  scale_x_continuous(labels=label_function, breaks=seq(-0.5, 9.5, 1), limits=c(-0.5, 9.5)))
+
+get_metric_common_name = function(x) {
+  return(case_when(x == 'oe_lof' ~ 'Observed/Expected',
+                   x == 'oe_lof_upper' ~ constraint_metric_name,
+                   TRUE ~ x))
+}
+
+label_function2 = function(x) {
+  paste0(x*10, '-', x*10 + 10, '%')
+}
 
 ds_breaks = c(0, 4e4, 8e4, 125748)
 ds_breaks_log = c(1e2, 1e3, 1e4, 125748)
@@ -253,10 +276,10 @@ downsampling_x_axis = function(log=T) {
   }
 }
 
-get_or_download_file = function(base_fname, subfolder='', local_name='') {
+get_or_download_file = function(base_fname, subfolder='', local_name='', version='v1.0') {
   fname = paste0(data_dir, ifelse(local_name != '', local_name, base_fname))
   if (!file.exists(fname)) {
-    url = paste0(data_url, subfolder, base_fname)
+    url = paste0(get_data_url(version), subfolder, base_fname)
     download.file(url, fname)
   }
   return(fname)
@@ -277,7 +300,7 @@ get_de_novo_data = function() {
   quality_data = read_delim(fname, delim = '\t')
   
   new_de_novo_data %>%
-    left_join(quality_data %>% transmute(variant = Variant, filters = Filters)) %>%
+    left_join(quality_data %>% transmute(CHROM, POSITION, REF, ALT, filters = Filters)) %>%
     filter(is.na(filters) | filters == 'PASS') %>%
     return
 }
@@ -289,13 +312,12 @@ load_downsampled_gene_data = function() {
 
 load_downsampled_data = function() {
   ds_data = load_downsampled_gene_data()
-  collapsed_ds = ds_data %>% filter(canonical) %>%
-    group_by(downsampling, pop) %>%
-    summarize_if(is.numeric, sum, na.rm=T) %>% ungroup
   
   collapsed_ds = ds_data %>% filter(canonical) %>%
     group_by(downsampling, pop) %>%
     summarize_at(vars(exp_syn:caf), .funs = funs(sum = sum(., na.rm=T),
+                                                 over0=sum(. >= 0, na.rm=T),
+                                                 total=n(),
                                                  over5raw = sum(. >= 5, na.rm=T)/n(),
                                                  over10raw = sum(. >= 10, na.rm=T)/n(),
                                                  over20raw = sum(. >= 20, na.rm=T)/n(),
@@ -448,6 +470,13 @@ load_observed_possible_data = function(data_type='exomes') {
     return
 }
 
+load_observed_possible_sites_data = function(data_type='exomes') {
+  fname = paste0('observed_possible_sites_', data_type, '.txt')
+  fname = get_or_download_file(fname, subfolder = 'summary_results/', version='v1.1')
+  read_delim(fname, delim = '\t', col_types=list(coverage=readr::col_number())) %>%
+    return
+}
+
 load_indel_data = function(data_type='exomes') {
   fname = paste0('indels_summary_', data_type, '.txt.bgz')
   fname = get_or_download_file(fname, subfolder = 'summary_results/')
@@ -467,7 +496,8 @@ load_freq_summary_data = function() {
 }
 
 load_sv_data = function() {
-  fname = get_or_download_file('gnomAD_v2_SV_MASTER_strictSubset.rare_biallelic_LoF_deletions_per_gene.obs_exp.txt', subfolder = 'misc_files/')
+  fname = get_or_download_file('gnomAD-SV_v2_rev1_releasable_forFlagship.rare_biallelic_LoF_deletions_per_gene.obs_exp.txt', 
+                               subfolder = 'misc_files/', version = 'v1.1')
   read_delim(fname, delim = '\t') %>%
     rename(gene = '#gene') %>%
     return
@@ -508,7 +538,8 @@ load_all_gene_list_data = function(list_dir = '../../gene_lists/lists/') {
 load_sum_stats = function() {
   fname = get_or_download_file('reshA3.tsv.gz', subfolder = 'misc_files/')
   read_tsv(fname, col_types = list(var_id=col_character(), prevalence=col_number())) %>%
-    mutate(name = as.factor(name))
+    mutate(name = as.factor(name)) %>%
+    mutate(description = gsub('Schizoprenia', 'Schizophrenia', gsub('\\*', '', description)))
 }
 
 load_tx_summary = function(expression_cutoff=0.3) {

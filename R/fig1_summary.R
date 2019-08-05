@@ -1,7 +1,12 @@
 
 
 summary_figure = function(data_type = 'exomes', group_splice=T, intergenic=F, legend=T,
-                   y_label = T, y_axis_position = "left", maps_limits=c(NA, NA), po_limits=c(NA, NA)) {
+                   y_label = T, y_axis_position = "left", maps_limits=c(NA, NA), po_limits=c(NA, NA),
+                   split_methylation=F, keep_x_labels=F) {
+  regroupings = c('csq', 'variant_type')
+  if (split_methylation) {
+    regroupings = c(regroupings, 'methylation_level')
+  }
   obs_poss = load_observed_possible_data(data_type) %>%
     filter(downsampling == max(downsampling))
   
@@ -27,7 +32,7 @@ summary_figure = function(data_type = 'exomes', group_splice=T, intergenic=F, le
     obs_poss_plot = obs_poss_plot %>%
       mutate(csq = fct_recode(csq, 'essential splice' = 'splice donor',
                               'essential splice' = 'splice acceptor')) %>%
-      group_by(csq, coverage, variant_type) %>%
+      group_by_at(c(regroupings, 'coverage')) %>%
       summarize(observed = sum(observed), possible = sum(possible),
                 proportion_observed = observed / possible,
                 singletons=sum(singletons), 
@@ -68,22 +73,41 @@ summary_figure = function(data_type = 'exomes', group_splice=T, intergenic=F, le
     scale_y_continuous(labels=percent) +
     theme_classic() + xlab('Coverage') + ylab('Percent observed')
   
-  p1prop = obs_poss_plot %>%
+  obs_poss_plot_final = obs_poss_plot %>%
     filter(coverage >= 30) %>%
-    group_by(csq, variant_type) %>%
+    group_by_at(regroupings) %>%
     summarize(observed = sum(observed), possible = sum(possible),
               proportion_observed = observed / possible,
               singletons=sum(singletons), 
               po_sem = 1.96 * sqrt(proportion_observed * (1 - proportion_observed) / possible)) %>%
-    filter(possible > 100) %>%
+    mutate(methylation=as.factor(split_methylation * methylation_level)) %>%
+    filter(possible > 100)
+  
+  p1prop = obs_poss_plot_final %>%
     ggplot + aes(x = csq, y = proportion_observed, color = variant_type, 
-                 ymin = proportion_observed - po_sem, ymax = proportion_observed + po_sem) + 
-    geom_pointrange() + geom_point(size=2.5) + xlab(NULL) +
+                 ymin = proportion_observed - po_sem, ymax = proportion_observed + po_sem,
+                 shape = methylation) + 
+    geom_pointrange() + geom_point(size=2.5) + xlab(NULL) + 
     theme_classic() + scale_color_manual(values=variant_type_colors, guide='none') + 
-    scale_y_continuous(labels=percent_format(accuracy = 1), position=y_axis_position, limits=po_limits) + 
-    theme(axis.text.x = element_blank(), 
-          plot.margin = margin(0, 5.5, 0, 5.5),
-          axis.ticks.x.bottom = element_blank())
+    scale_y_continuous(labels=percent_format(accuracy = 1), position=y_axis_position, limits=po_limits)
+  
+  if (!keep_x_labels) {
+    p1prop = p1prop + theme(axis.text.x = element_blank(), 
+                            plot.margin = margin(0, 5.5, 0, 5.5),
+                            axis.ticks.x.bottom = element_blank())
+  }
+  
+  if (split_methylation) {
+    # top_point = max(obs_poss_plot_final$proportion_observed)
+    # p1prop + 
+    #   annotate('point', x = 'nonsense', y = top_point * 0.95, shape = 15, size = 2.5, color = color_cpg) + 
+    #   annotate('point', x = 'nonsense', y = top_point * 0.9, shape = 17, size = 2.5, color = color_cpg) + 
+    #   annotate('point', x = 'nonsense', y = top_point * 0.85, shape = 16, size = 2.5, color = color_cpg) +
+    #   annotate('text', x = 'nonsense', y = top_point, label = 'Methylation level', hjust = 1, color = color_cpg)
+    p1prop = p1prop + scale_shape_discrete(name='Methylation\nLevel', limits=c(2, 1, 0), labels=c('High', 'Medium', 'Unmethylated'), solid=T)
+  } else {
+    p1prop = p1prop + guides(shape=F)
+  }
   
   if (y_label) {
     p1prop = p1prop + ylab('Percent observed')

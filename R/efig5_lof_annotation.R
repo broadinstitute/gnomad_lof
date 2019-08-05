@@ -209,6 +209,190 @@ loftee_comparisons = function() {
     geom_density(alpha=0.5) + scale_x_log10() + theme_classic()
 }
 
+curation_results = function () {
+  all_hom_data = read_delim(gzfile('data/all_homozygous_lofs.txt.bgz'), delim = '\t', 
+                            col_types = list(locus=col_character()))
+  
+  curation_data = read_csv('data/Final_gnomad_LOF_curation.csv') %>%
+    mutate(verdict=fct_relevel(verdict, 'LoF', 'likely_LoF',
+                               'uncertain_LoF', 'likely_not_LoF', 'not_LoF'))
+  gene_data = load_constraint_data()
+  or_genes = gene_data %>%
+    filter(grepl('^OR', gene)) %>%
+    transmute(gene = gene, gene_list = 'Olfactory Genes')
+  
+  gene_lists = load_all_gene_list_data() %>%
+    bind_rows(or_genes)
+  
+  curation_data %>%
+    filter(verdict %in% c('likely_LoF', 'LoF')) %>%
+    # filter(verdict %in% c('likely_not_LoF', 'not_LoF')) %>%
+    select(-id, -variant_id_1, -curator_id) %>%
+    summarize_if(is.numeric, sum) %>%
+    gather('reason', 'count') %>%
+    mutate(reason=fct_reorder(reason, count, .desc = TRUE)) %>%
+    ggplot + aes(x = reason, y = count) + 
+    geom_bar(stat='identity', fill='darkblue') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.margin = margin(l = 30))
+  
+  # Raw overall verdict
+  curation_data %>%
+    count(verdict)
+  
+  # Summary of similarities/differences
+  curation_data_by_variant = curation_data %>%
+    count(variant_id, verdict) %>%
+    complete(variant_id, verdict, fill=list(n = 0)) %>%
+    spread(verdict, n)
+  
+  curation_data_by_variant %>%
+    count(LoF, likely_LoF, uncertain_LoF, likely_not_LoF, not_LoF) %>% 
+    arrange(desc(n))
+  
+  curation_data_collapsed = curation_data %>%
+    mutate(verdict=fct_recode(verdict,
+                              'not_LoF' = 'likely_not_LoF',
+                              'LoF' = 'likely_LoF'
+    ),
+    verdict=fct_relevel(verdict, 'LoF', 'uncertain_LoF', 'not_LoF'))
+  
+  # Overall verdict
+  curation_data_collapsed %>%
+    count(verdict)
+  
+  # Summarized similarities/differences
+  curation_data_by_variant_collapsed = curation_data_collapsed %>%
+    count(variant_id, verdict) %>%
+    complete(variant_id, verdict, fill=list(n = 0)) %>%
+    spread(verdict, n)
+  
+  curation_data_by_variant_collapsed %>%
+    count(LoF, uncertain_LoF, not_LoF) %>% 
+    arrange(desc(n))
+  
+  # Differing variants
+  curation_data_by_variant_collapsed %>%
+    filter(LoF > 0 & not_LoF > 0)
+  
+  confident_lofs = curation_data_by_variant_collapsed %>%
+    filter(LoF > 0 & not_LoF == 0)
+  
+  ar_genes = load_all_gene_list_data() %>%
+    filter(gene_list == 'all_ar') %$% gene
+  
+  all_hom_data %>%
+    inner_join(confident_lofs) %>%
+    count(gene_symbol = csq.gene_symbol) %$% gene_symbol -> hom_ko_genes
+  write.table(hom_ko_genes, row.names=F, quote=F, col.names = F, file='data/hom_ko_genes.txt')
+  
+  all_hom_data %>%
+    inner_join(confident_lofs) %>%
+    count(gene_id = csq.gene_id) %$% gene_id -> hom_ko_genes
+  
+  gene_data %>%
+    left_join(gene_lists) %>%
+    mutate(ko = ifelse(gene_id %in% hom_ko_genes, 'ko', 'no_ko')) %>%
+    count(gene_list, ko) %>% 
+    spread(ko, n) %>%
+    mutate(prop_ko = ko / (ko + no_ko)) %>%
+    arrange(desc(prop_ko)) %>% data.frame
+  
+  gene_data %>%
+    mutate(ar_gene = gene %in% ar_genes, 
+           ko = gene_id %in% hom_ko_genes) %>%
+    count(ar_gene, ko)
+  
+  # fisher.test(matrix(c(89, 1557, 1090, 16968), nrow=2))
+  
+  gene_data %>%
+    mutate(ar_gene = gene %in% ar_genes, 
+           ko = gene_id %in% hom_ko_genes) %>%
+    filter(ar_gene & ko) %$% gene
+  
+  set.seed(42)
+  sample_with_matched_loeuf_distr = function(gene_data) {
+    data = gene_data %>%
+      filter(!is.na(oe_lof_upper_bin)) %>%
+      mutate(ar_gene = gene %in% ar_genes)
+    
+    data %>%
+      filter(ar_gene) %$%
+      density(oe_lof_upper) -> dens
+    data %>%
+      filter(!ar_gene) %$%
+      density(oe_lof_upper) -> dens_bg
+    
+    data = data %>%
+      mutate(prob = approxfun(dens)(oe_lof_upper) / approxfun(dens_bg)(oe_lof_upper))
+    
+    # data %>%
+    #   filter(!ar_gene) %>%
+    #   sample_n(sum(data$ar_gene), replace = F, weight = prob) %>%
+    #   union(data %>% filter(ar_gene)) %T>%
+    #   {print(group_by(., ar_gene) %>% summarize(mean_oe_lof_upper=mean(oe_lof_upper), n=n()))} %>%
+    #   ggplot + aes(x = oe_lof_upper, group = ar_gene, fill = ar_gene) +
+    #   geom_density(alpha=0.2) + theme_classic() + scale_x_log10()
+    
+    data %>%
+      sample_n(sum(data$ar_gene), replace = F, weight = prob) %>%
+      mutate(ko = gene_id %in% hom_ko_genes) %>%
+      summarize(ko_and_ar = sum(ar_gene & ko),
+                ko_not_ar = sum(!ar_gene & ko),
+                not_ko_ar = sum(ar_gene & !ko),
+                not_ko_not_ar = sum(!ar_gene & !ko)) %>%
+      do(ft=fisher.test(matrix(c(.$ko_and_ar, .$ko_not_ar, .$not_ko_ar, .$not_ko_not_ar), nrow=2))) %>%
+      tidy(ft)
+    
+  }
+  test = bind_rows(pbreplicate(100, sample_with_matched_loeuf_distr(gene_data), simplify = F))
+}
+
+variants_per_individual = function(data_type='exomes', save_plot=F) {
+  samples = data.frame(datatype='exomes', eas=9197, sas=15308, nfe=56885, fin=10824, asj=5040, afr=8128, amr=17296, oth=3070) %>%
+    rbind(data.frame(datatype='genomes', eas=780, nfe=7718, fin=1738, asj=145, afr=4359, amr=424, sas=0, oth=513+31)) %>%
+    gather('pop', 'n', -datatype) %>%
+    filter(datatype==data_type) %>%
+    do(bind_rows(., summarize(., datatype=data_type, pop='global', n=sum(n))))
+  
+  fname = get_or_download_file(base_fname = paste0('variants_per_sample_', data_type, '.txt.bgz'), 
+                               subfolder = 'summary_results/', version = 'v1.1')
+  vpi_data = read_delim(gzfile(fname), delim='\t', col_types = cols(lof=col_character()))
+  
+  proc_vpi_data = vpi_data %>%
+    filter(bin != 'Not found') %>%
+    mutate(lof=if_else(worst_csq %in% c('frameshift_variant', 'stop_gained', 'splice_donor_variant', 'splice_acceptor_variant'),
+                       lof, NA_character_)) %>%
+    group_by(worst_csq, lof, no_lof_flags, protein_coding, pop, bin, lcr, curated) %>%
+    summarize(total=sum(total), total_hom=sum(total_hom)) %>% ungroup
+  
+  # LoFs per individual
+  proc_vpi_data %>%
+    filter(protein_coding & bin != '>95%') %>%
+    group_by(worst_csq, lof, no_lof_flags, bin, pop, lcr, curated, no_lof_flags) %>%
+    summarize(total=sum(total), total_hom=sum(total_hom)) %>% ungroup %>%
+    left_join(samples) %>%
+    mutate(var_per_ind = total / n,
+           hom_per_ind = total_hom / n,
+           bin = fct_relevel(as.factor(bin), 'Singleton', 'Doubleton', 'AC 3 - 5',
+                             'AC 6 - 0.01%', '0.01% - 0.1%', '< 0.1%', '0.1% - 1%',
+                             '1% - 10%', '10% - 95%', '>95%'),
+           curated=is.na(curated) | curated) %>%
+    filter(pop == 'global' & lof == 'HC') %>%
+    arrange(worst_csq, bin) %>%
+    group_by(lcr, curated, no_lof_flags) %>%
+    summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind)) %>%
+    ungroup %>%
+    arrange(desc(no_lof_flags), lcr, desc(curated)) %>%
+    mutate(var_per_ind = cumsum(var_per_ind), hom_per_ind=cumsum(hom_per_ind))
+  
+  if (save_plot) {
+    pdf('variants_per_individual.pdf', height=3, width=4)
+    print(p)
+    dev.off()
+  }
+  return(p)
+}
+
 efigure5 = function() {
   e5b = end_trunc_assessment()
   e5c = lof_frequency_spectrum()

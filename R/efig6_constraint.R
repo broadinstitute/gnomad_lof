@@ -35,7 +35,7 @@ compare_mutation_rates = function(save_plot=F, log=F, legend=T) {
     ggplot + aes(x = old_mu, y = mu_snp, color = variant_type, shape = as.character(methylation_level)) + 
     geom_point() + scale_shape_manual(values=shapes) +
     theme_classic() + scale_color_manual(values=variant_type_colors, name = '') +
-    xlab('Old mu') + ylab('New mu') + guides(color=F, shape=F) +
+    xlab('Mutation rate (Neale et al., 2012)') + ylab('Mutation rate') + guides(color=F, shape=F) +
     theme(axis.text.x = element_text(angle = 30, hjust = 1))
   
   if (legend) {
@@ -191,3 +191,55 @@ efigure6 = function() {
   # print(ef5)
 }
 
+per_chromosome_analysis = function(save_plot=F) {
+  chromosome_data = gene_data %>% 
+    mutate(chromosome = fct_relevel(chromosome, as.character(1:22), 'X', 'Y')) %>%
+    count(oe_lof_upper_bin, chromosome) %>%
+    group_by(chromosome) %>% 
+    mutate(prop=n/sum(n)) %>% ungroup
+  
+  # chromosome_data %>%
+  #   filter(chromosome != 'Y') %>%
+  #   mutate(chromosome=fct_rev(chromosome)) %>%
+  #   ggplot + aes(x = oe_lof_upper_bin, y = chromosome, fill = prop) %>%
+  #   geom_tile() + oe_x_axis + ylab('Chromosome') +
+  #   scale_fill_gradient(low = "white", high = "steelblue", name='Proportion \n of genes')
+  # 
+  # chromosome_data %>%
+  #   filter(oe_lof_upper_bin == 0) %>%
+  #   ggplot + aes(x = chromosome, y = prop) + geom_bar(stat='identity')
+  # 
+  # gene_data %>%
+  #   mutate(simplified_chrom=case_when(chromosome == 'Y' ~ 'Y',
+  #                                     chromosome == 'X' ~ 'X',
+  #                                     TRUE ~ 'autosomes')) %>%
+  #   ggplot + aes(x = oe_lof_upper, fill = simplified_chrom) +
+  #   geom_density(alpha=0.5) + xlab(constraint_metric_name)
+  # 
+  # gene_data %>%
+  #   mutate(simplified_chrom=case_when(chromosome == 'Y' ~ 'Y',
+  #                                     chromosome == 'X' ~ 'X',
+  #                                     TRUE ~ 'autosomes')) %>%
+  #   ggplot + aes(x = oe_lof_upper_bin, fill = simplified_chrom) +
+  #   geom_bar(position='stack') + oe_x_axis
+  
+  p = gene_data %>%
+    mutate(simplified_chrom=case_when(chromosome == 'Y' ~ 'Y',
+                                      chromosome == 'X' ~ 'X',
+                                      TRUE ~ 'autosomes'),
+           presence = 1) %>%
+    complete(simplified_chrom, oe_lof_upper_bin, fill = list(presence = 0)) %>%
+    count(simplified_chrom, oe_lof_upper_bin, wt = presence) %>%
+    group_by(simplified_chrom) %>%
+    mutate(prop = n / sum(n)) %>%
+    ggplot + aes(x = oe_lof_upper_bin, y = prop, fill = simplified_chrom) +
+    geom_bar(position='dodge', stat='identity') + oe_x_axis +
+    labs(fill='Chromosome') + ylab('Proportion of chromosome(s)')
+  
+  if (save_plot) {
+    pdf('loeuf_by_chromosome.pdf', height=3, width=4)
+    print(p)
+    dev.off()
+  }
+  return(p)
+}
