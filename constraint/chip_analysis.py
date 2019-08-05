@@ -14,7 +14,7 @@ logger = logging.getLogger("chip")
 logger.setLevel(logging.INFO)
 
 
-def expand_hist(repeat_numbers,bin_numbers):
+def expand_hist(repeat_numbers, bin_numbers):
     """
     Generates an expanded histogram with the values of bin_numbers repeated x times, where x is specified in repeat_numbers
     :param list repeat_numbers: list of number of times to repeat the respective elements in bin_numbers
@@ -22,7 +22,7 @@ def expand_hist(repeat_numbers,bin_numbers):
     :return: list of the expanded histogram
     :rtype: list
     """
-    summed_hist = np.repeat(bin_numbers,repeat_numbers)
+    summed_hist = np.repeat(bin_numbers, repeat_numbers)
     return summed_hist
 
 
@@ -38,17 +38,17 @@ def rename_cols(column):
     return column
 
 
-def test_ks(a1,a2):
+def test_ks(a1, a2):
     """
-    Runs the two sample Kolmogorov-Smirnov test on the two supplied arrays, requires ndarrays with at least 2 distinct values
+    Runs the Kolmogorov-Smirnov test on the two supplied arrays, requires ndarrays with at least 2 distinct values
     :param list a1: array 1
     :param list a2: array 2
     :return: [KS statisic, KS p-value]
     :rtype: list
     """
-    if isinstance(a1,np.ndarray) and isinstance(a2,np.ndarray):
+    if isinstance(a1, np.ndarray) and isinstance(a2, np.ndarray):
         if len(set(a1)) > 1 and len(set(a2)) > 1:  # require at least 2 distinct values
-            ks_result = stats.ks_2samp(a1,a2)
+            ks_result = stats.ks_2samp(a1, a2)
             return pd.Series((ks_result[0], ks_result[1]))
         else:
             return pd.Series((np.NaN, np.NaN))
@@ -56,22 +56,22 @@ def test_ks(a1,a2):
         return pd.Series((np.NaN, np.NaN))
     
     
-def test_mood(a1,a2):
+def test_mood(a1, a2):
     """
-    Runs the two sample Kolmogorov-Smirnov test on the two supplied arrays, requires ndarrays with at least 2 distinct values
+    Runs Mood's median test on the two supplied arrays, requires ndarrays with at least 2 distinct values
     :param list a1: array 1
     :param list a2: array 2
-    :return: [KS statisic, KS p-value]
-    :rtype: list
+    :return: p-value
+    :rtype: float
     """
-    if isinstance(a1,np.ndarray) and isinstance(a2,np.ndarray):
+    if isinstance(a1, np.ndarray) and isinstance(a2, np.ndarray):
         if len(set(a1)) > 1 and len(set(a2)) > 1:  # require at least 2 distinct values
-            stat,p,grand_median,contigency_table = stats.median_test(a1,a2)
+            _, p, _, _ = stats.median_test(a1, a2)
             return p
         else:
-            return pd.Series((np.NaN, np.NaN))
+            return np.NaN
     else:
-        return pd.Series((np.NaN, np.NaN))
+        return np.NaN
 
 
 def main(args):
@@ -102,27 +102,27 @@ def main(args):
     
     # aggregate histograms and group by transcript ID and variant severity
     logger.info("Aggregating histograms...")
-    ht = ht.annotate(chrom = ht.locus.contig)
+    ht = ht.annotate(chrom=ht.locus.contig)
     
     # set the variant severity based on consequence and lof annotations (only set to lof if high confidence)
-    ht = ht.annotate(variant_severity = (hl.case()
+    ht = ht.annotate(variant_severity=(hl.case()
                                          .when(hl.is_defined(ht.vep.transcript_consequences.lof) & (ht.vep.transcript_consequences.lof == "HC" ), "lof")
                                          .when(ht.vep.transcript_consequences.consequence_terms.contains("synonymous_variant"), "synonymous")
                                          .when(ht.vep.transcript_consequences.consequence_terms.contains("missense_variant"), "missense")
                                          .default("none")))
 
     # sum het and hom age histograms per variant
-    ht = ht.annotate(age_middle = ht.age_hist_het[0].bin_freq + ht.age_hist_hom[0].bin_freq,
-                           age_n_smaller = ht.age_hist_het[0].n_smaller + ht.age_hist_hom[0].n_smaller,
-                           age_n_larger = ht.age_hist_het[0].n_larger + ht.age_hist_hom[0].n_larger)
+    ht = ht.annotate(age_middle=ht.age_hist_het[0].bin_freq + ht.age_hist_hom[0].bin_freq,
+                           age_n_smaller=ht.age_hist_het[0].n_smaller + ht.age_hist_hom[0].n_smaller,
+                           age_n_larger=ht.age_hist_het[0].n_larger + ht.age_hist_hom[0].n_larger)
 
     # add n_smaller and n_larger to ends of age histogram
-    ht = ht.annotate(age_hist = hl.array([ht.age_n_smaller]).extend(ht.age_middle).append(ht.age_n_larger))
+    ht = ht.annotate(age_hist=hl.array([ht.age_n_smaller]).extend(ht.age_middle).append(ht.age_n_larger))
                       
     # aggregate histograms and group by transcript ID and variant severity
     table_result = (ht.group_by(ht.chrom, ht.vep.transcript_consequences.transcript_id, ht.vep.transcript_consequences.gene_symbol, ht.vep.transcript_consequences.gene_id, ht.variant_severity).
-                    aggregate(summed_ab_hists = hl.agg.array_sum(ht.ab_hist_alt.bin_freq),
-                              summed_age_hists = hl.agg.array_sum(ht.age_hist)))
+                    aggregate(summed_ab_hists=hl.agg.array_sum(ht.ab_hist_alt.bin_freq),
+                              summed_age_hists=hl.agg.array_sum(ht.age_hist)))
 
     # compare to a median of the summed histograms as an alternative test (take median of summed histograms for synonymous variants in transcripts)
     median_ab_hist = table_result.aggregate(hl.agg.filter(table_result.variant_severity == "synonymous", hl.agg.array_agg(lambda x: hl.median(hl.agg.collect(x)), table_result.summed_ab_hists)))
@@ -165,10 +165,10 @@ def main(args):
     
         logger.info("Running ks test...")
         # test lof vs synonymous distributions for ab and age
-        subset_df[['ks_statistic_ab','ks_p_value_ab']] = subset_df[['expanded_hists_ab_lof','expanded_hists_ab_synonymous']].apply(lambda x: test_ks(*x), axis=1)
-        subset_df[['ks_statistic_age','ks_p_value_age']] = subset_df[['expanded_hists_age_lof','expanded_hists_age_synonymous']].apply(lambda x: test_ks(*x), axis=1)
-        subset_df[['ks_statistic_ab_median','ks_p_value_ab_median']] = (subset_df['expanded_hists_ab_lof']).apply(test_ks, args=[expanded_hist_ab_median])
-        subset_df[['ks_statistic_age_median','ks_p_value_age_median']] = (subset_df['expanded_hists_age_lof']).apply(test_ks, args=[expanded_hist_age_median])
+        subset_df[['ks_statistic_ab', 'ks_p_value_ab']] = subset_df[['expanded_hists_ab_lof', 'expanded_hists_ab_synonymous']].apply(lambda x: test_ks(*x), axis=1)
+        subset_df[['ks_statistic_age', 'ks_p_value_age']] = subset_df[['expanded_hists_age_lof', 'expanded_hists_age_synonymous']].apply(lambda x: test_ks(*x), axis=1)
+        subset_df[['ks_statistic_ab_median', 'ks_p_value_ab_median']] = (subset_df['expanded_hists_ab_lof']).apply(test_ks, args=[expanded_hist_ab_median])
+        subset_df[['ks_statistic_age_median', 'ks_p_value_age_median']] = (subset_df['expanded_hists_age_lof']).apply(test_ks, args=[expanded_hist_age_median])
 
         # sort by p-value for ks test on ab
         subset_df = subset_df.sort_values(by=['ks_p_value_ab'])
@@ -176,23 +176,23 @@ def main(args):
     
         logger.info("Running Mood's median test...")
         # test lof vs synonymous distributions for ab and age
-        subset_df['mood_p_ab'] = subset_df[['expanded_hists_ab_lof','expanded_hists_ab_synonymous']].apply(lambda x: test_mood(*x), axis=1)
-        subset_df['mood_p_age'] = subset_df[['expanded_hists_age_lof','expanded_hists_age_synonymous']].apply(lambda x: test_mood(*x), axis=1)
+        subset_df['mood_p_ab'] = subset_df[['expanded_hists_ab_lof', 'expanded_hists_ab_synonymous']].apply(lambda x: test_mood(*x), axis=1)
+        subset_df['mood_p_age'] = subset_df[['expanded_hists_age_lof', 'expanded_hists_age_synonymous']].apply(lambda x: test_mood(*x), axis=1)
 
         
         logger.info("Calculating length of arrays...")
         # get lengths of arrays that were used for ks test
-        subset_df['len_expanded_hists_ab_lof'] = subset_df['expanded_hists_ab_lof'].apply(lambda x: len(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['len_expanded_hists_ab_synonymous'] = subset_df['expanded_hists_ab_synonymous'].apply(lambda x: len(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['len_expanded_hists_age_lof'] = subset_df['expanded_hists_age_lof'].apply(lambda x: len(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['len_expanded_hists_age_synonymous'] = subset_df['expanded_hists_age_synonymous'].apply(lambda x:  len(x) if isinstance(x,np.ndarray) else np.NaN)
+        subset_df['len_expanded_hists_ab_lof'] = subset_df['expanded_hists_ab_lof'].apply(lambda x: len(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['len_expanded_hists_ab_synonymous'] = subset_df['expanded_hists_ab_synonymous'].apply(lambda x: len(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['len_expanded_hists_age_lof'] = subset_df['expanded_hists_age_lof'].apply(lambda x: len(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['len_expanded_hists_age_synonymous'] = subset_df['expanded_hists_age_synonymous'].apply(lambda x:  len(x) if isinstance(x, np.ndarray) else np.NaN)
 
     
         logger.info("Calculating medians...")
-        subset_df['med_ab_lof'] = subset_df['expanded_hists_ab_lof'].apply(lambda x: np.median(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['med_ab_synonymous'] = subset_df['expanded_hists_ab_synonymous'].apply(lambda x: np.median(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['med_age_lof'] = subset_df['expanded_hists_age_lof'].apply(lambda x: np.median(x) if isinstance(x,np.ndarray) else np.NaN)
-        subset_df['med_age_synonymous'] = subset_df['expanded_hists_age_synonymous'].apply(lambda x: np.median(x) if isinstance(x,np.ndarray) else np.NaN)
+        subset_df['med_ab_lof'] = subset_df['expanded_hists_ab_lof'].apply(lambda x: np.median(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['med_ab_synonymous'] = subset_df['expanded_hists_ab_synonymous'].apply(lambda x: np.median(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['med_age_lof'] = subset_df['expanded_hists_age_lof'].apply(lambda x: np.median(x) if isinstance(x, np.ndarray) else np.NaN)
+        subset_df['med_age_synonymous'] = subset_df['expanded_hists_age_synonymous'].apply(lambda x: np.median(x) if isinstance(x, np.ndarray) else np.NaN)
 
         # retain only certain columns
         df_out = subset_df[['transcript_id',
@@ -240,6 +240,4 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     main(args)
-
-    
 
