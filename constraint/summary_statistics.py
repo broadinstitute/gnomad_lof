@@ -323,13 +323,14 @@ def main(args):
                 loftee_assess_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
             )
 
-        if data_type == 'exomes' and args.run_variants_per_sample:
+        if args.run_variants_per_sample:
             ht = get_gnomad_public_data(data_type)
 
-            ht = ht.filter((hl.len(ht.filters) == 0))# & get_an_adj_criteria(ht, sample_sizes))
+            ht = ht.filter((hl.len(ht.filters) == 0))  # & get_an_adj_criteria(ht, sample_sizes))
             ht = filter_vep_to_canonical_transcripts(ht)
             ht = get_worst_consequence_with_non_coding(ht)
-            ht = filter_low_conf_regions(ht)
+            ht = filter_low_conf_regions(ht, annotate_instead_of_filter=True)
+            ht = ht.annotate(curated=get_curation_data()[ht.key].curated)
 
             def build_criteria(ht: hl.Table, data_type: str, index: int = 0):
                 criteria = hl.case(missing_false=True).when(
@@ -340,25 +341,34 @@ def main(args):
                     criteria = criteria.when(ht.freq[index].AF < 1e-3, '< 0.1%')
                 else:
                     criteria = (criteria
-                                .when(ht.freq[index].AC <= 5, 'AC 3-5')
-                                .when(ht.freq[index].AF < 1e-4, '< 0.01%')
+                                .when(ht.freq[index].AC <= 5, 'AC 3 - 5')
+                                .when(ht.freq[index].AF < 1e-4, 'AC 6 - 0.01%')
                                 .when(ht.freq[index].AF < 1e-3, '0.01% - 0.1%'))
                 return (criteria
                         .when(ht.freq[index].AF < 1e-2, '0.1% - 1%')
                         .when(ht.freq[index].AF < 1e-1, '1% - 10%')
-                        .default('>10%'))
+                        .when(ht.freq[index].AF > 0.95, '>95%')
+                        .default('10% - 95%'))
 
             pops = list(map(lambda x: x.lower(), EXOME_POPS if data_type == 'exomes' else GENOME_POPS))
             pops = [(pop, hl.eval(ht.freq_index_dict[f'gnomad_{pop}'])) for pop in pops] + [('global', 0)]
-            # ht = ht.group_by('worst_csq', 'lof', 'no_lof_flags', 'protein_coding').aggregate(
-            #     **{pop: hl.agg.group_by(build_criteria(ht, data_type, index),
-            #                             hl.agg.sum(ht.freq[index].AC)) for pop, index in pops}
-            # )  # TODO: melt and explode
-            pop_freq_mapping = {f'bin_{pop}': build_criteria(ht, data_type, index) for pop, index in pops}
-            ht = ht.annotate(**pop_freq_mapping)
-            ht = ht.group_by(*list(pop_freq_mapping), 'worst_csq', 'lof', 'no_lof_flags', 'protein_coding').aggregate(
-                **{f'count_{pop}': hl.agg.sum(ht.freq[index].AC) for pop, index in pops}
+            ht = ht.group_by('worst_csq', 'lof', 'no_lof_flags', 'protein_coding', 'curated', **ht.regions).aggregate(
+                pop_bin_sums=[(pop, hl.agg.group_by(build_criteria(ht, data_type, index),
+                                                    [hl.agg.sum(ht.freq[index].AC),
+                                                     hl.agg.sum(ht.freq[index].homozygote_count)]))
+                              for pop, index in pops]
             )
+            ht = ht.explode('pop_bin_sums')
+            ht = ht.transmute(pop=ht.pop_bin_sums[0], bin_sums=hl.array(ht.pop_bin_sums[1]))
+            ht = ht.explode('bin_sums')
+            ht = ht.transmute(bin=ht.bin_sums[0], total=ht.bin_sums[1][0], total_hom=ht.bin_sums[1][1])
+            # # Alternative to above code:
+            # pop_freq_mapping = {f'bin_{pop}': build_criteria(ht, data_type, index) for pop, index in pops}
+            # ht = ht.annotate(**pop_freq_mapping)
+            # ht = ht.group_by(*list(pop_freq_mapping), 'worst_csq', 'lof', 'no_lof_flags', 'protein_coding').aggregate(
+            #     **{f'count_{pop}': hl.agg.sum(ht.freq[index].AC) for pop, index in pops},
+            #     ** {f'hom_{pop}': hl.agg.sum(ht.freq[index].homozygote_count) for pop, index in pops}
+            # )
             ht.write(variants_per_sample_ht_path.format(data_type=data_type), overwrite=args.overwrite)
             hl.read_table(variants_per_sample_ht_path.format(data_type=data_type)).export(
                 variants_per_sample_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz')
@@ -383,6 +393,7 @@ if __name__ == '__main__':
     parser.add_argument('--run_loftee_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_end_trunc_maps', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_obs_poss', help='Overwrite everything', action='store_true')
+    parser.add_argument('--run_obs_poss_sites', help='Overwrite everything', action='store_true')
     parser.add_argument('--run_variants_per_sample', help='Overwrite everything', action='store_true')
     parser.add_argument('--assess_loftee', help='Overwrite everything', action='store_true')
     parser.add_argument('--methylation_hist', help='Overwrite everything', action='store_true')
