@@ -248,9 +248,9 @@ def explode_downsamplings(ht, select_canonical=True):
         data=[
             hl.struct(
                 pop=pop, downsampling=downsampling,
-                exp_syn=ht[f'exp_syn_{pop}'][i], obs_syn=ht[f'obs_syn_{pop}'][i],
-                exp_mis=ht[f'exp_mis_{pop}'][i], obs_mis=ht[f'obs_mis_{pop}'][i],
-                exp_lof=ht[f'exp_lof_{pop}'][i], obs_lof=ht[f'obs_lof_{pop}'][i],
+                exp_syn=ht[f'exp_syn_{pop}'][i], obs_syn=hl.cond(hl.is_missing(ht[f'obs_syn_{pop}'][i]) & hl.is_defined(ht.obs_syn), 0, ht[f'obs_syn_{pop}'][i]),
+                exp_mis=ht[f'exp_mis_{pop}'][i], obs_mis=hl.cond(hl.is_missing(ht[f'obs_mis_{pop}'][i]) & hl.is_defined(ht.obs_mis), 0, ht[f'obs_mis_{pop}'][i]),
+                exp_lof=ht[f'exp_lof_{pop}'][i], obs_lof=hl.cond(hl.is_missing(ht[f'obs_lof_{pop}'][i]) & hl.is_defined(ht.obs_lof), 0, ht[f'obs_lof_{pop}'][i]),
                 n_sites=ht.n_sites_array[meta_loc],
                 caf=ht.classic_caf_array[meta_loc]
             )
@@ -262,8 +262,10 @@ def explode_downsamplings(ht, select_canonical=True):
                       n_sites=ht.n_sites, caf=ht.classic_caf)
         ]
     ).select(*fields)
+    ht = ht.annotate()
     ht = ht.explode('data')
-    return ht.transmute(**ht.data)
+    ht = ht.transmute(**ht.data)
+    return oe_confidence_interval(ht, ht.obs_lof, ht.exp_lof, prefix='oe_lof', select_only_ci_metrics=False)
 
 
 def compute_homozygous_lof(mt, tx_ht):
