@@ -376,10 +376,12 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     return ht
 
 
-def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
+def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False, half_cutoff = False,
+                 ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
-    all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= HIGH_COVERAGE_CUTOFF)
+    cov_cutoff = (HIGH_COVERAGE_CUTOFF / half_cutoff) if half_cutoff else HIGH_COVERAGE_CUTOFF
+    all_high_coverage_ht = coverage_ht.filter(coverage_ht.exome_coverage >= cov_cutoff)
     agg_expr = {
         'observed_variants': hl.agg.sum(all_high_coverage_ht.variant_count),
         'possible_variants': hl.agg.sum(all_high_coverage_ht.possible_variants)
@@ -395,7 +397,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
         hl.agg.sum(all_high_coverage_ht.variant_count) /
         hl.agg.sum(all_high_coverage_ht.possible_variants * all_high_coverage_ht.mu_snp))
 
-    all_low_coverage_ht = coverage_ht.filter((coverage_ht.exome_coverage < HIGH_COVERAGE_CUTOFF) &
+    all_low_coverage_ht = coverage_ht.filter((coverage_ht.exome_coverage < cov_cutoff) &
                                              (coverage_ht.exome_coverage > 0))
 
     low_coverage_ht = all_low_coverage_ht.group_by(log_coverage=hl.log10(all_low_coverage_ht.exome_coverage)).aggregate(
@@ -422,7 +424,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
                             plateau_models: Dict[str, Tuple[float, float]], coverage_model: Tuple[float, float],
                             recompute_possible: bool = False, remove_from_denominator: bool = True,
                             custom_model: str = None, dataset: str = 'gnomad',
-                            impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
+                            impose_high_af_cutoff_upfront: bool = True, half_cutoff = False) -> hl.Table:
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -489,11 +491,12 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
         ht = ht.transmute(possible_variants=ht.variant_count)
         ht = annotate_variant_types(ht.annotate(mu_agg=ht.mu_snp * ht.possible_variants))
         model = hl.literal(plateau_models.total)[ht.cpg]
+        cov_cutoff = (HIGH_COVERAGE_CUTOFF / half_cutoff) if half_cutoff else HIGH_COVERAGE_CUTOFF
         ann_expr = {
             'adjusted_mutation_rate': ht.mu_agg * model[1] + model[0],
             'coverage_correction': hl.case()
                 .when(ht.coverage == 0, 0)
-                .when(ht.coverage >= HIGH_COVERAGE_CUTOFF, 1)
+                .when(ht.coverage >= cov_cutoff, 1)
                 .default(coverage_model[1] * hl.log10(ht.coverage) + coverage_model[0])
         }
         for pop in POPS:
