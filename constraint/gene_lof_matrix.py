@@ -5,8 +5,9 @@ __author__ = 'konradk'
 from constraint_utils import *
 
 gene_lof_matrix_path = 'gs://gnomad-resources/lof_paper/individual_level/full_gene_lof_matrix_{}.mt'
-homozygous_lof_mt_path = 'gs://gnomad-resources/lof_paper/individual_level/all_homozygous_lofs.mt'
-lofs_by_gene_ht_path = f'{root}/homozygous_lof_summary.ht'
+homozygous_lof_mt_path_raw = 'gs://gnomad-resources/lof_paper/individual_level/all_homozygous_lofs{data_type}.mt'
+lofs_by_gene_ht_path_raw = f'{root}/homozygous_lof_summary{{data_type}}.ht'
+coverage_summary_ht_path = f'{root}/coverage_summary.ht'
 
 
 def load_gtf_data():
@@ -23,6 +24,21 @@ def load_gtf_data():
         num_coding_exons=hl.agg.count()
     ).key_by('transcript_id')
     return transcripts.annotate(**genes[transcripts.gene_id])
+
+
+def create_coverage_summary(overwrite: bool = False):
+    gtf = hl.experimental.import_gtf('gs://hail-common/references/gencode/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=100)
+    gtf = gtf.annotate(gene_id=gtf.gene_id.split('\\.')[0],
+                       transcript_id=gtf.transcript_id.split('\\.')[0])
+    gtf = gtf.filter(gtf.feature == 'CDS').select('gene_id', 'transcript_id')
+    gtf = gtf.checkpoint(hl.utils.new_temp_file())
+    ht = hl.read_table(coverage_ht_path('exomes'))
+    ht = ht.annotate(cds=gtf.index(ht.locus, all_matches=True)).explode('cds')
+    ht = ht.group_by(gene_id=ht.cds.gene_id, transcript_id=ht.cds.transcript_id).aggregate(
+        mean_coverage=hl.agg.mean(ht.mean),
+        median_coverage=hl.agg.approx_quantiles(ht.median, 0.5)
+    )
+    return ht.checkpoint(coverage_summary_ht_path, overwrite=overwrite, _read_if_exists=not overwrite)
 
 
 def load_gene_expression_data():
@@ -182,17 +198,20 @@ def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False, pop_specif
     caf_ht = caf_ht.key_by(*caf_keys).drop(*caf_drop)
     exac_pli = load_exac_pli_data()
     gene_ht = load_gtf_data()
-    expr_ht = load_gene_expression_data()
+    # expr_ht = load_gene_expression_data()
+    coverage_ht = hl.read_table(coverage_summary_ht_path)
     if by_transcript:
         exac = exac_pli[constraint_ht.transcript]
         gene = gene_ht.drop('gene_name')[constraint_ht.transcript]
-        expr_ht = expr_ht.drop('gene_id')
+        # expr_ht = expr_ht.drop('gene_id')
+        coverage = coverage_ht[constraint_ht.key]
     else:
         exac = exac_pli.key_by('gene')[constraint_ht.gene]
         gene = gene_ht.key_by('gene_name').drop('transcript_id')[constraint_ht.gene]
-        expr_ht = expr_ht.key_by('gene_id').drop('transcript_id')
+        # expr_ht = expr_ht.key_by('gene_id').drop('transcript_id')
+        coverage = coverage_ht.key_by('transcript_id').drop('gene_id')[constraint_ht.transcript]
     constraint_ht = constraint_ht.annotate(
-        **caf_ht[constraint_ht.key], **gene,
+        **caf_ht[constraint_ht.key], **gene, **coverage,
         exac_pLI=exac.pLI, exac_obs_lof=exac.n_lof, exac_exp_lof=exac.exp_lof, exac_oe_lof=exac.n_lof / exac.exp_lof
     )
     # If CAF data is missing and LoFs are possible in the gene, set all CAF metrics to zero
@@ -204,7 +223,7 @@ def combine_lof_metrics(gene_lof_matrix, by_transcript: bool = False, pop_specif
            if x in constraint_ht.row and constraint_ht[x].dtype in {hl.tint32, hl.tfloat32, hl.tint64, hl.tfloat64}}
     )
     return constraint_ht.annotate(
-        **expr_ht[constraint_ht.gene_id]
+        # **expr_ht[constraint_ht.gene_id]
     ).annotate_globals(freq_meta=caf_ht.index_globals().freq_meta, freq_index_dict=caf_ht.index_globals().freq_index_dict)
 
 
@@ -290,9 +309,10 @@ def main(args):
     gene_lof_matrix = get_gene_lof_path(args)
     subdir = get_release_subdir(args)
 
+    root = 'gs://gnomad-public/papers/2019-flagship-lof/v1.0'
     all_lof_metrics_path = f'{root}/{subdir}gnomad.v2.1.1.lof_metrics.{{extension}}'
 
-    tx_ht = load_tx_expression_data(context=False)
+    tx_ht = load_tx_expression_data(context=args.genomes)
     if args.calculate_gene_lof_matrix:
         mt = get_gnomad_data('exomes', adj=True, release_samples=True, release_annotations=True)
         mt = generate_gene_lof_matrix(mt, tx_ht, by_transcript=args.by_transcript,
@@ -309,6 +329,10 @@ def main(args):
         hl.read_table(gene_lof_matrix.replace('.mt', '.summary.ht')).drop('classic_caf_array').export(
             gene_lof_matrix.replace('.mt', '.summary.txt.bgz'))
 
+    if args.create_coverage_summary:
+        create_coverage_summary(args.overwrite)
+
+    # hail gene_lof_matrix.py --combine_lof_metrics --by_transcript
     if args.combine_lof_metrics:
         ht = combine_lof_metrics(gene_lof_matrix, args.by_transcript, pop_specific=args.pop_specific)
         ht.write(all_lof_metrics_path.format(extension='by_transcript.ht'), args.overwrite)
@@ -320,7 +344,7 @@ def main(args):
         # # 2.7% are missing LoF data (only zero LoF possible genes), confirmed by:
         # # # cht.filter(hl.is_missing(cht.obs_lof) & ~cht.gene_issues.contains('no_exp_lof')).show(10)
         # # 1 is missing oe_syn CIs: tiny Y chromosome gene with negative expected
-        # Checked that number of exons is similar to ExAC (minor differences = UTRs)
+        # # Checked that number of exons is similar to ExAC (minor differences = UTRs)
 
     if args.export_combined_metrics:
         ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
@@ -338,28 +362,38 @@ def main(args):
 
         ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
         ht = explode_downsamplings(ht, args.by_transcript)
-        ht.export(all_lof_metrics_path.format(extension='downsamplings.txt.bgz'))
+        ht.export(all_lof_metrics_path.format(extension='downsamplings.txt.bgz').replace('v1.0', 'v1.1'))
 
+    data_type = 'genomes' if args.genomes else 'exomes'
+    homozygous_lof_mt_path = homozygous_lof_mt_path_raw.format(data_type='_genomes' if args.genomes else '')
     if args.compute_homozygous_lof:
-        mt = get_gnomad_data('exomes', adj=True, non_refs_only=True,
+        mt = get_gnomad_data(data_type, adj=True, non_refs_only=True,
                              release_samples=True, release_annotations=True)
         ht = compute_homozygous_lof(mt, tx_ht)
         ht.write(homozygous_lof_mt_path, args.overwrite)
         send_message(args.slack_channel, 'Homozygous LoFs computed!')
 
+    lofs_by_gene_ht_path = lofs_by_gene_ht_path_raw.format(data_type='_genomes' if args.genomes else '')
+    if args.include_low_pext:
+        homozygous_lof_mt_path = homozygous_lof_mt_path.replace('.mt', '.low_pext.mt')
+        lofs_by_gene_ht_path = lofs_by_gene_ht_path.replace('.ht', '.low_pext.ht')
     if args.export_homozygous_lof:
         mt = hl.read_matrix_table(homozygous_lof_mt_path)
-        vep_ht = hl.read_table(annotations_ht_path('exomes', 'vep_csq'))
-        mt = mt.filter_rows(mt.tx_annotation.mean_expression > 0.1)
+        vep_ht = hl.read_table(annotations_ht_path(data_type, 'vep_csq'))
+        if not args.include_low_pext: mt = mt.filter_rows(mt.tx_annotation.mean_expression > 0.1)
         mt = mt.annotate_rows(info=hl.struct(
             AC=mt.freq[0].AC, AN=mt.freq[0].AN, AF=mt.freq[0].AF, n_hom=mt.freq[0].homozygote_count,
             CSQ=vep_ht[mt.row_key].vep
         )).drop('is_missing')
+        if args.genomes:
+            exome_ht = hl.read_matrix_table(homozygous_lof_mt_path_raw.format(data_type='')).rows()
+            mt = mt.filter_rows(hl.is_missing(exome_ht[mt.row_key]))
+
         hl.export_vcf(mt, homozygous_lof_mt_path.replace('.mt', '.vcf.bgz'), metadata={
             'info': {'CSQ': {'Description': vep_ht.vep_csq_header.collect()[0]}}
         })
         ht = mt.rows()
-        # ht.count()  # 3385 variants
+        # ht.count()  # 3385 variants (110 in genomes)
         ht.select(
             'indel', AC=ht.info.AC, AN=ht.info.AN, AF=ht.info.AF, n_hom=ht.info.n_hom,
             variant_id=hl.delimit([ht.locus.contig, hl.str(ht.locus.position), ht.alleles[0], ht.alleles[1]], '-'),
@@ -374,17 +408,17 @@ def main(args):
         hl.read_table(lofs_by_gene_ht_path).export(lofs_by_gene_ht_path.replace('.ht', '.txt.bgz'))
 
     if args.count_lofs:
-        ht = get_gnomad_public_data('exomes')
-        result = count_lofs(ht)
+        ht = get_gnomad_public_data(data_type)
+        result = count_lofs(ht, data_type)
         ht = ht.filter(hl.len(ht.filters) == 0)
-        filtered_result = count_lofs(ht)
+        filtered_result = count_lofs(ht, data_type)
         print('\n')
         pprint(dict(result))
         print('\n')
         pprint(dict(filtered_result))
 
 
-def count_lofs(ht):
+def count_lofs(ht, data_type):
     lof_cats = hl.literal({"splice_acceptor_variant", "splice_donor_variant", "stop_gained", "frameshift_variant"})
     basic_lof_csqs = ht.vep.transcript_consequences.filter(
         lambda x: lof_cats.contains(add_most_severe_consequence_to_consequence(x).most_severe_consequence) &
@@ -399,7 +433,10 @@ def count_lofs(ht):
     hc_canonical_lof_csqs = ht.vep.transcript_consequences.filter(lambda x: (x.lof == 'HC') & (x.canonical == 1))
     hc_noflag_canonical_lof_csqs = ht.vep.transcript_consequences.filter(
         lambda x: (x.lof == 'HC') & hl.is_missing(x.lof_flags) & (x.canonical == 1))
-    sample_sizes = {'female': 57787, 'male': 67961}
+    if data_type == 'genomes':
+        sample_sizes = {'female': 6967, 'male': 8741}
+    else:
+        sample_sizes = {'female': 57787, 'male': 67961}
     result = ht.aggregate(
         hl.struct(
             basic_lofs=hl.agg.count_where(hl.len(basic_lof_csqs) > 0),
@@ -430,13 +467,16 @@ if __name__ == '__main__':
     parser.add_argument('--no_loftee', help='Do not filter with LOFTEE (only for comparison)', action='store_true')
     parser.add_argument('--dont_collapse_indels', help='Do not collapse indels when exporting Gene LoF matrix', action='store_true')
     parser.add_argument('--pop_specific', help='Use pop-specific matrix instead', action='store_true')
+    parser.add_argument('--include_low_pext', help='Include low pext variants in export', action='store_true')
     parser.add_argument('--calculate_gene_lof_matrix', help='Calculate Gene LoF Matrix', action='store_true')
     parser.add_argument('--export_gene_lof_matrix', help='Export Gene LoF Matrix', action='store_true')
+    parser.add_argument('--create_coverage_summary', help='Create coverage summary file', action='store_true')
     parser.add_argument('--combine_lof_metrics', help='Combine all LoF metrics', action='store_true')
     parser.add_argument('--export_combined_metrics', help='Export combined LoF metrics', action='store_true')
     parser.add_argument('--compute_homozygous_lof', help='Compute Homozygous LoFs', action='store_true')
     parser.add_argument('--export_homozygous_lof', help='Export Homozygous LoF summary', action='store_true')
     parser.add_argument('--count_lofs', help='Generate counts of LoFs for paper', action='store_true')
+    parser.add_argument('--genomes', help='Use genomes instead of exomes', action='store_true')
     parser.add_argument('--slack_channel', help='Send message to Slack channel/user', default='@konradjk')
     args = parser.parse_args()
 

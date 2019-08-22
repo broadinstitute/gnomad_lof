@@ -15,7 +15,7 @@ def main(args):
         import_fasta(raw_context_txt_path, raw_context_ht_path, args.overwrite)
         vep_context_ht(raw_context_ht_path, vep_context_ht_path, args.overwrite)
         split_context_mt(vep_context_ht_path, {'exomes': coverage_ht_path('exomes'), 'genomes': coverage_ht_path('genomes')},
-                         methylation_sites_mt_path(), context_ht_path, args.overwrite)
+                         methylation_sites_ht_path(), context_ht_path, args.overwrite)
         pre_process_data(get_gnomad_public_data('genomes'), context_ht_path, processed_genomes_ht_path, args.overwrite)
         pre_process_data(get_gnomad_public_data('exomes'), context_ht_path, processed_exomes_ht_path, args.overwrite)
 

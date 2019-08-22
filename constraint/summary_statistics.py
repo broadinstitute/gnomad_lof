@@ -1,5 +1,6 @@
 from constraint_utils import *
 
+root = 'gs://gnomad-public/papers/2019-flagship-lof/v1.1'
 subdir = 'summary_results'
 maps_ht_path = f'{root}/{subdir}/maps_plain_{{data_type}}.ht'
 sfs_ht_path = f'{root}/{subdir}/sfs_{{data_type}}.ht'
@@ -9,6 +10,7 @@ end_trunc_maps_ht_path = f'{root}/{subdir}/maps_end_trunc_gerp_{{data_type}}.ht'
 loftee_assess_ht_path = f'{root}/{subdir}/freq_loftee_{{data_type}}.ht'
 variants_per_sample_ht_path = f'{root}/{subdir}/variants_per_sample_{{data_type}}.ht'
 observed_possible_ht_path = f'{root}/{subdir}/observed_possible_expanded_{{data_type}}.ht'
+observed_possible_sites_ht_path = f'{root}/{subdir}/observed_possible_sites_{{data_type}}.txt'
 indels_summary_ht_path = f'{root}/{subdir}/indels_summary_{{data_type}}.ht'
 methylation_hist_file = f'{root}/{subdir}/methylation_hist.txt.bgz'
 
@@ -17,16 +19,21 @@ def get_worst_consequence_with_non_coding(ht):
     def get_worst_csq(csq_list: hl.expr.ArrayExpression, protein_coding: bool) -> hl.struct:
         lof = hl.null(hl.tstr)
         no_lof_flags = hl.null(hl.tbool)
+        # lof_filters = hl.null(hl.tstr)
+        # lof_flags = hl.null(hl.tstr)
         if protein_coding:
             all_lofs = csq_list.map(lambda x: x.lof)
             lof = hl.literal(['HC', 'OS', 'LC']).find(lambda x: all_lofs.contains(x))
-            # TODO: uncomment and rerun when https://github.com/hail-is/hail/issues/5575 is fixed
-            # csq_list = hl.cond(hl.is_defined(lof), csq_list.filter(lambda x: x.lof == lof), csq_list)
-            # no_lof_flags = hl.or_missing(hl.is_defined(lof),
-            #                              csq_list.any(lambda x: (x.lof == lof) & hl.is_missing(x.lof_flags)))
+            csq_list = hl.cond(hl.is_defined(lof), csq_list.filter(lambda x: x.lof == lof), csq_list)
+            no_lof_flags = hl.or_missing(hl.is_defined(lof),
+                                         csq_list.any(lambda x: (x.lof == lof) & hl.is_missing(x.lof_flags)))
+            # lof_filters = hl.delimit(hl.set(csq_list.map(lambda x: x.lof_filter).filter(lambda x: hl.is_defined(x))), '|')
+            # lof_flags = hl.delimit(hl.set(csq_list.map(lambda x: x.lof_flags).filter(lambda x: hl.is_defined(x))), '|')
         all_csq_terms = csq_list.flatmap(lambda x: x.consequence_terms)
         worst_csq = hl.literal(CSQ_ORDER).find(lambda x: all_csq_terms.contains(x))
-        return hl.struct(worst_csq=worst_csq, protein_coding=protein_coding, lof=lof, no_lof_flags=no_lof_flags)
+        return hl.struct(worst_csq=worst_csq, protein_coding=protein_coding, lof=lof, no_lof_flags=no_lof_flags,
+                         # lof_filters=lof_filters, lof_flags=lof_flags
+                         )
 
     protein_coding = ht.vep.transcript_consequences.filter(lambda x: x.biotype == 'protein_coding')
     return ht.annotate(**hl.case(missing_false=True)
@@ -78,8 +85,16 @@ def get_bin_boundaries(ht: hl.Table, feature: str = 'GERP_DIST', n_bins: int = 2
     return bin_boundaries
 
 
+def get_curation_data():
+    ht = hl.import_table('gs://gnomad-public/papers/2019-flagship-lof/v1.1/Final_gnomad_LOF_curation.csv',
+                         delimiter=',', impute=True, quote='"')
+    ht = ht.annotate(curated=(ht.verdict == 'LoF') | (ht.verdict == 'likely_LoF'))
+    var = ht.variant_id.split('-')
+    return ht.key_by(locus=hl.locus(var[0], hl.int(var[1])), alleles=var[2:4])
+
+
 def main(args):
-    context_ht = hl.read_table(context_ht_path)
+    context_ht = hl.read_table(context_ht_path())
     mutation_ht = hl.read_table(mutation_rate_ht_path)
 
     for data_type, sample_sizes in data_type_sex_counts.items():
