@@ -53,6 +53,7 @@ def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'gl
                   (f[1].get('pop') == pop) & f[1].contains('downsampling')
     )
     sorted_indices = hl.sorted(indices, key=lambda f: hl.int(f[1]['downsampling'])).map(lambda x: x[0])
+    # TODO: this likely needs to be fixed for aggregations that return missing (need to be 0'd out)
 
     def get_criteria(i):
         if singleton:

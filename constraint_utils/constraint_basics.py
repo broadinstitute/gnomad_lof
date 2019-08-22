@@ -778,22 +778,26 @@ def pLI(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expressi
 
 
 def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression,
-                           prefix: str = 'oe', alpha: float = 0.05) -> hl.Table:
+                           prefix: str = 'oe', alpha: float = 0.05, select_only_ci_metrics: bool = True) -> hl.Table:
     ht = ht.annotate(_obs=obs, _exp=exp)
-    oe_ht = ht.annotate(range=hl.range(0, 2000).map(lambda x: hl.float64(x) / 1000))
-    oe_ht = oe_ht.annotate(range_dpois=oe_ht.range.map(lambda x: hl.dpois(oe_ht._obs, oe_ht._exp * x)))
+    oe_ht = ht.annotate(_range=hl.range(0, 2000).map(lambda x: hl.float64(x) / 1000))
+    oe_ht = oe_ht.annotate(_range_dpois=oe_ht._range.map(lambda x: hl.dpois(oe_ht._obs, oe_ht._exp * x)))
 
-    oe_ht = oe_ht.annotate(cumulative_dpois=hl.cumulative_sum(oe_ht.range_dpois))
-    max_cumulative_dpois = oe_ht.cumulative_dpois[-1]
-    oe_ht = oe_ht.annotate(norm_dpois=oe_ht.cumulative_dpois.map(lambda x: x / max_cumulative_dpois))
-    oe_ht = oe_ht.annotate(
-        lower_idx=hl.argmax(oe_ht.norm_dpois.map(lambda x: hl.or_missing(x < alpha, x))),
-        upper_idx=hl.argmin(oe_ht.norm_dpois.map(lambda x: hl.or_missing(x > 1 - alpha, x)))
+    oe_ht = oe_ht.transmute(_cumulative_dpois=hl.cumulative_sum(oe_ht._range_dpois))
+    max_cumulative_dpois = oe_ht._cumulative_dpois[-1]
+    oe_ht = oe_ht.transmute(_norm_dpois=oe_ht._cumulative_dpois.map(lambda x: x / max_cumulative_dpois))
+    oe_ht = oe_ht.transmute(
+        _lower_idx=hl.argmax(oe_ht._norm_dpois.map(lambda x: hl.or_missing(x < alpha, x))),
+        _upper_idx=hl.argmin(oe_ht._norm_dpois.map(lambda x: hl.or_missing(x > 1 - alpha, x)))
     )
-    return oe_ht.select(**{
-        f'{prefix}_lower': hl.cond(oe_ht._obs > 0, oe_ht.range[oe_ht.lower_idx], 0),
-        f'{prefix}_upper': oe_ht.range[oe_ht.upper_idx]
+    oe_ht = oe_ht.transmute(**{
+        f'{prefix}_lower': hl.cond(oe_ht._obs > 0, oe_ht._range[oe_ht._lower_idx], 0),
+        f'{prefix}_upper': oe_ht._range[oe_ht._upper_idx]
     })
+    if select_only_ci_metrics:
+        return oe_ht.select(f'{prefix}_lower', f'{prefix}_upper')
+    else:
+        return oe_ht.drop('_exp')
 
 
 def calculate_z(input_ht: hl.Table, obs: hl.expr.NumericExpression, exp: hl.expr.NumericExpression, output: str = 'z_raw') -> hl.Table:
