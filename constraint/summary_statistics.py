@@ -103,7 +103,7 @@ def main(args):
         coverage_ht = hl.read_table(coverage_ht_path(data_type))
 
         ht = ht.annotate(coverage=coverage_ht[ht.locus].median)
-        ht = ht.filter((hl.len(ht.filters) == 0) & get_an_adj_criteria(ht, sample_sizes))
+        ht = ht.filter((hl.len(ht.filters) == 0))  # & get_an_adj_criteria(ht, sample_sizes))
         ht = filter_vep_to_canonical_transcripts(ht)
         ht = get_worst_consequence_with_non_coding(ht)
 
