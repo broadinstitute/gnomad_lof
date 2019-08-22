@@ -245,6 +245,29 @@ def main(args):
                                   sum(sample_sizes.values())).export(
                 observed_possible_ht_path.format(data_type=data_type).replace('.ht', '.txt.bgz'))
 
+        if args.run_obs_poss_sites:
+            print(f'Running observed/possible sites for {data_type}...')
+
+            initial_alleles = hl.read_table(annotations_ht_path(data_type, 'allele_data'))
+            initial_alleles = initial_alleles.filter(initial_alleles.a_index == 1)
+
+            sites_snp_ht = snp_ht.filter(hl.is_defined(initial_alleles[snp_ht.key]))
+
+            observed = sites_snp_ht.aggregate(hl.agg.counter(sites_snp_ht.coverage))
+            possible = context_ht.aggregate(hl.agg.counter(context_ht.coverage[data_type].median))
+            for coverage, n_sites in observed.items():
+                if coverage not in possible:
+                    raise ValueError(f'{coverage} not found in possible dict')
+
+            temp_f = hl.utils.new_local_temp_file()
+            print(f'Writing to {temp_f}...')
+            with open(temp_f, 'w') as f:
+                f.write('coverage\tn_sites_observed\tn_sites_possible\n')
+                for coverage, n_sites_possible in possible.items():
+                    n_sites_observed = observed.get(coverage, 0)
+                    f.write(f'{coverage}\t{n_sites_observed}\t{n_sites_possible / 3}\n')
+            hl.hadoop_copy(f'file://{temp_f}', observed_possible_sites_ht_path.format(data_type=data_type))
+
         if data_type == 'exomes' and args.assess_loftee:
             ht = ht.annotate(vep=ht.vep.annotate(
                 transcript_consequences=ht.vep.transcript_consequences.filter(lambda x: hl.is_defined(x.lof)))
