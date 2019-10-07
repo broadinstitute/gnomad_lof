@@ -321,6 +321,9 @@ basic_loftee = function(save_plot=F) {
     pdf('maps_lof.pdf', height=2.5, width=4)
     print(p_maps_loftee)
     dev.off()
+    png('maps_lof.png', height=2.5, width=4, res=300, units = 'in')
+    print(p_maps_loftee)
+    dev.off()
   }
   return(p_maps_loftee)
 }

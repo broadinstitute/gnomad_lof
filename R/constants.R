@@ -41,9 +41,11 @@ library(ggrepel)
 library(RMySQL)
 library(cowplot)
 library(ggwordcloud)
+library(RCurl)
 
 data_dir = './data/'
 suppressWarnings(dir.create(data_dir))
+data_versions = c('v1.1', 'v1.0')
 get_data_url = function(version = 'v1.0') {
   return(paste0('https://storage.googleapis.com/gnomad-public/papers/2019-flagship-lof/', version, '/'))
 }
@@ -276,9 +278,17 @@ downsampling_x_axis = function(log=T) {
   }
 }
 
-get_or_download_file = function(base_fname, subfolder='', local_name='', version='v1.0') {
+get_or_download_file = function(base_fname, subfolder='', local_name='', version='') {
   fname = paste0(data_dir, ifelse(local_name != '', local_name, base_fname))
   if (!file.exists(fname)) {
+    if (version == '') {
+      for (version in data_versions) {
+        url = paste0(get_data_url(version), subfolder, base_fname)
+        if (url.exists(url)) {
+          break
+        }
+      }
+    }
     url = paste0(get_data_url(version), subfolder, base_fname)
     download.file(url, fname)
   }
@@ -315,15 +325,16 @@ load_downsampled_data = function() {
   
   collapsed_ds = ds_data %>% filter(canonical) %>%
     group_by(downsampling, pop) %>%
-    summarize_at(vars(exp_syn:caf), .funs = funs(sum = sum(., na.rm=T),
-                                                 over0=sum(. >= 0, na.rm=T),
-                                                 total=n(),
-                                                 over5raw = sum(. >= 5, na.rm=T)/n(),
-                                                 over10raw = sum(. >= 10, na.rm=T)/n(),
-                                                 over20raw = sum(. >= 20, na.rm=T)/n(),
-                                                 over5 = sum(. >= 5, na.rm=T)/sum(. > 0, na.rm=T),
-                                                 over10 = sum(. >= 10, na.rm=T)/sum(. > 0, na.rm=T),
-                                                 over20 = sum(. >= 20, na.rm=T)/sum(. > 0, na.rm=T))
+    summarize_at(c('exp_syn', 'obs_syn', 'exp_mis', 'obs_mis', 'exp_lof', 'obs_lof', 'n_sites', 'caf'),
+                 .funs = list(sum = function(x) sum(x, na.rm=T),
+                              over0 = function(x) sum(x >= 0, na.rm=T),
+                              total = function(x) length(x),
+                              over5raw = function(x) sum(x >= 5, na.rm=T)/length(x),
+                              over10raw = function(x) sum(x >= 10, na.rm=T)/length(x),
+                              over20raw = function(x) sum(x >= 20, na.rm=T)/length(x),
+                              over5 =  function(x) sum(x >= 5, na.rm=T)/sum(x > 0, na.rm=T),
+                              over10 = function(x) sum(x >= 10, na.rm=T)/sum(x > 0, na.rm=T),
+                              over20 = function(x) sum(x >= 20, na.rm=T)/sum(x > 0, na.rm=T))
     ) %>% ungroup
   
   ds_melt = collapsed_ds %>% filter(pop == 'global') %>% select(-pop) %>%
@@ -454,7 +465,7 @@ cumulative_maps = function(data, prefix='maps') {
            temptemp_upper=temptemp + 1.96 * temptemp_sem,
            temptemp_lower=temptemp - 1.96 * temptemp_sem) %>% 
     rename_at(vars(temptemp_singleton_count:temptemp_lower), 
-              funs(paste0(prefix, str_sub(as.character(.), 9))))
+              list(paste0(prefix, str_sub(as.character(.), 9))))
   return(maps)
 }
 

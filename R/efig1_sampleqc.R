@@ -13,7 +13,7 @@ all_data = bind_rows(
 ) %>% 
   gather(pop, count, -dataset) %>% filter(!is.na(count)) %>%
   group_by(dataset, pop) %>% summarize(count = sum(count)) %>% ungroup %>%
-  mutate(dataset = fct_reorder(dataset, count, fun = sum),
+  mutate(dataset = fct_reorder(dataset, count, .fun = sum),
          pop = fct_relevel(pop, 'oth', 'unk', after=Inf))
 
 subpop_data = tribble(

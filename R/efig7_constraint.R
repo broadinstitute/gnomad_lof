@@ -440,6 +440,11 @@ sfigure8 = function() {
   # print(p)
   # dev.off()
   
+  f = gzfile('data/supplementary_dataset_13_gene_lists.tsv.gz', 'w')
+  cloud_data %>% 
+    write.table(f, row.names = F, quote=F, sep = '\t')
+  close(f)
+  
   p = cloud_data %>% 
     add_count(oe_lof_upper_bin, gene_list) %>%
     mutate(n = n + 0.1) %>%
