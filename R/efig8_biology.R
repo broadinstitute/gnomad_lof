@@ -395,16 +395,16 @@ efigure8 = function() {
   # e8bottom = ggarrange(e8b, e8c, e8d, e8e, nrow = 2, ncol = 2, align = 'v', labels = c('b', 'c', 'd', 'e'), vjust = 1)
   # ggarrange(e8a, e8bottom, nrow = 2, ncol = 1, align = 'v', labels = c('a', ''), vjust = 1, heights=c(1, 2))
   pdf('extended_data_figure8.pdf', height=8, width=7.5)
-  ggarrange(e8a, 
+  print(ggarrange(e8a, 
             ggarrange(e8b, e8c, e8d, e8e, nrow = 2, ncol = 2, align = 'v', 
                       labels = c('b', 'c', 'd', 'e'), vjust = 1), 
-            nrow = 2, ncol = 1, align = 'v', labels = c('a', ''), vjust = 1, heights=c(1, 2))
+            nrow = 2, ncol = 1, align = 'v', labels = c('a', ''), vjust = 1, heights=c(1, 2)))
   dev.off()
   png('extended_data_figure8.png', height=8, width=7.5, units = 'in', res=300)
-  ggarrange(e8a, 
+  print(ggarrange(e8a, 
             ggarrange(e8b, e8c, e8d, e8e, nrow = 2, ncol = 2, align = 'v', 
                       labels = c('b', 'c', 'd', 'e'), vjust = 1), 
-            nrow = 2, ncol = 1, align = 'v', labels = c('a', ''), vjust = 1, heights=c(1, 2))
+            nrow = 2, ncol = 1, align = 'v', labels = c('a', ''), vjust = 1, heights=c(1, 2)))
   dev.off()
 }
 

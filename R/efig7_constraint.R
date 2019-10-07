@@ -292,22 +292,22 @@ efigure7 = function() {
   #                nrow = 4, ncol = 2, align = 'v', 
   #                labels = c('a', 'b', 'c', 'd', 'e', 'f', 'g'), 
   #                label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
-  ggarrange(e7row1, egg::set_panel_size(e7c, width=unit(2, 'in')), e7row34, align='hv',
+  print(ggarrange(e7row1, egg::set_panel_size(e7c, width=unit(2, 'in')), e7row34, align='hv',
             nrow = 3, ncol = 1,
             labels = c('', 'c', ''),
             heights = c(1, 1, 2)
-  )
+  ))
   dev.off()
   png('extended_data_figure7.png', height=8, width=7.5, units = 'in', res=300)
   # egg::ggarrange(plots=list(a, b, c, d, e, f, g),
   #                nrow = 4, ncol = 2, align = 'v', 
   #                labels = c('a', 'b', 'c', 'd', 'e', 'f', 'g'), 
   #                label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
-  ggarrange(e7row1, egg::set_panel_size(e7c, width=unit(2, 'in')), e7row34, align='hv',
+  print(ggarrange(e7row1, egg::set_panel_size(e7c, width=unit(2, 'in')), e7row34, align='hv',
             nrow = 3, ncol = 1,
             labels = c('', 'c', ''),
             heights = c(1, 1, 2)
-  )
+  ))
   dev.off()
  }
 
@@ -317,10 +317,10 @@ sfigure6 = function() {
   s6c = oe_v_loeuf(x_metric='oe_lof', y_metric='pLI')
   s6d = oe_v_loeuf_lines()
   pdf('supplementary_figure6.pdf', height=6, width=8)
-  ggarrange(s6a, s6b, s6c, s6d, ncol = 2, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s6a, s6b, s6c, s6d, ncol = 2, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
   png('supplementary_figure6.png', height=6, width=8, units = 'in', res=300)
-  ggarrange(s6a, s6b, s6c, s6d, ncol = 2, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s6a, s6b, s6c, s6d, ncol = 2, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
 }
 
@@ -403,10 +403,10 @@ sfigure7 = function() {
   s7a = expected_projections(samples_required_lof)
   s7b = expected_projections(samples_required_mis, 'Missense')
   pdf('supplementary_figure7.pdf', height=6, width=6)
-  ggarrange(s7a, s7b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s7a, s7b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
   png('supplementary_figure7.png', height=6, width=6, units = 'in', res=300)
-  ggarrange(s7a, s7b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s7a, s7b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
 }
 
@@ -669,11 +669,11 @@ sfigure9 = function() {
   s9a = rvis_comparisons('is_hi', add_pLI=T)
   s9b = rvis_comparisons('is_essential', add_pLI=T)
   pdf('supplementary_figure9.pdf', height=4, width=8)
-  ggarrange(s9a, s9b, ncol = 2, nrow = 1, labels = 'auto', align = 'v')
+  print(ggarrange(s9a, s9b, ncol = 2, nrow = 1, labels = 'auto', align = 'v'))
   dev.off()
   res = 300
   png('supplementary_figure9.png', height=4*res, width=8*res, res=res)
-  ggarrange(s9a, s9b, ncol = 2, nrow = 1, labels = 'auto', align = 'v')
+  print(ggarrange(s9a, s9b, ncol = 2, nrow = 1, labels = 'auto', align = 'v'))
   dev.off()
 }
 
@@ -740,11 +740,11 @@ sfigure10 = function() {
   s10b = plot_constraint_by_downsampling('is_essential', 'AUC (Essential genes)')
   
   pdf('supplementary_figure10.pdf', height=4, width=8)
-  ggarrange(s10a, s10b, ncol = 2, nrow = 1, labels = 'auto', align = 'v')
+  print(ggarrange(s10a, s10b, ncol = 2, nrow = 1, labels = 'auto', align = 'v'))
   dev.off()
   res = 300
   png('supplementary_figure10.png', height=4*res, width=8*res, res=res)
-  ggarrange(s10a, s10b, ncol = 2, nrow = 1, labels = 'auto', align = 'v')
+  print(ggarrange(s10a, s10b, ncol = 2, nrow = 1, labels = 'auto', align = 'v'))
   dev.off()
 }
 

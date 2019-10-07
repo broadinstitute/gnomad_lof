@@ -10,6 +10,7 @@
 
 options(stringsAsFactors = F)
 library(Hmisc)
+library(RCurl)
 library(plyr)
 library(tidyverse)
 library(broom)
@@ -41,7 +42,6 @@ library(ggrepel)
 library(RMySQL)
 library(cowplot)
 library(ggwordcloud)
-library(RCurl)
 
 data_dir = './data/'
 suppressWarnings(dir.create(data_dir))
@@ -366,7 +366,7 @@ load_constraint_data = function(level='gene', loftee=T) {
     return
 }
 
-get_ko_gene_lists = function(list_dir = '../../mouse_lof/lof_paper_dataset/') {
+get_ko_gene_lists = function(list_dir = 'ko_gene_lists/') {
   gene_lists = map_df(list.files(list_dir, 'list_.+\\.tsv'), 
                       function(x) read_tsv(paste(list_dir, x, sep = '/'), 
                                            col_names = F, col_types = cols()

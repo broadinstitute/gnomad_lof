@@ -203,16 +203,16 @@ figure1 = function() {
   # dev.off()
   
   pdf('figure1.pdf', height=7, width=6, onefile = F)
-  egg::ggarrange(plots = list(p1e, p1g) %>% transpose() %>% do.call(base::c, .),
+  print(egg::ggarrange(plots = list(p1e, p1g) %>% transpose() %>% do.call(base::c, .),
                  nrow = 3, ncol = 2, align = 'v',
                  labels=c('c', 'd', 'e', 'f', 'g', 'h'),
-                 label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
+                 label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1))
   dev.off()
   png('figure1.png', height=7, width=6, units = 'in', res=300)
-  egg::ggarrange(plots = list(p1e, p1g) %>% transpose() %>% do.call(base::c, .),
+  print(egg::ggarrange(plots = list(p1e, p1g) %>% transpose() %>% do.call(base::c, .),
                  nrow = 3, ncol = 2, align = 'v',
                  labels=c('c', 'd', 'e', 'f', 'g', 'h'),
-                 label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
+                 label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1))
   dev.off()
 }
 

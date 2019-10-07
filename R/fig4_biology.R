@@ -307,9 +307,9 @@ figure4 = function() {
   p4b = plot_expression_metrics_by_constraint()
   p4c = constrained_v_unconstrained_transcript()
   pdf('figure4.pdf', height=6, width=7.5)
-  ggarrange(p4a, p4b, p4c, ncol = 2, nrow = 2, labels = 'auto', align = 'v', vjust = 1)
+  print(ggarrange(p4a, p4b, p4c, ncol = 2, nrow = 2, labels = 'auto', align = 'v', vjust = 1))
   dev.off()
   png('figure4.png', height=6, width=7.5, units = 'in', res=300)
-  ggarrange(p4a, p4b, p4c, ncol = 2, nrow = 2, labels = 'auto', align = 'v', vjust = 1)
+  print(ggarrange(p4a, p4b, p4c, ncol = 2, nrow = 2, labels = 'auto', align = 'v', vjust = 1))
   dev.off()
 }

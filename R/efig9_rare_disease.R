@@ -192,10 +192,10 @@ efigure9 = function() {
   e9c = plot_rare_disease(phenotype = 'ASD')
   e9d = scz_rare_variants()
   pdf('extended_data_figure9.pdf', height=6, width=7.5)
-  ggarrange(e9a, e9b, e9c, e9d, nrow = 2, ncol = 2, align = 'hv', labels = 'auto', vjust = 1)
+  print(ggarrange(e9a, e9b, e9c, e9d, nrow = 2, ncol = 2, align = 'hv', labels = 'auto', vjust = 1))
   dev.off()
   png('extended_data_figure9.png', height=6, width=7.5, units = 'in', res=300)
-  ggarrange(e9a, e9b, e9c, e9d, nrow = 2, ncol = 2, align = 'hv', labels = 'auto', vjust = 1)
+  print(ggarrange(e9a, e9b, e9c, e9d, nrow = 2, ncol = 2, align = 'hv', labels = 'auto', vjust = 1))
   dev.off()
 }
 

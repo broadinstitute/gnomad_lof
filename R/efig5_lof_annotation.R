@@ -397,10 +397,10 @@ efigure5 = function() {
   e5b = end_trunc_assessment()
   e5c = lof_frequency_spectrum()
   pdf('extended_data_figure5.pdf', height=3, width=8)
-  ggarrange(e5b, e5c, nrow = 1, ncol = 2, align = 'hv', labels = c('b', 'c'), vjust = 1)
+  print(ggarrange(e5b, e5c, nrow = 1, ncol = 2, align = 'hv', labels = c('b', 'c'), vjust = 1))
   dev.off()
   png('extended_data_figure5.png', height=3, width=8, units = 'in', res=300)
-  ggarrange(e5b, e5c, nrow = 1, ncol = 2, align = 'hv', labels = c('b', 'c'), vjust = 1)
+  print(ggarrange(e5b, e5c, nrow = 1, ncol = 2, align = 'hv', labels = c('b', 'c'), vjust = 1))
   dev.off()
 }
 

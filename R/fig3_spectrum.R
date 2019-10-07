@@ -232,9 +232,9 @@ figure3 = function() {
   p3c = mouse_ko_comparison()
   p3d = cell_ko_comparison()
   pdf('figure3.pdf', height=5, width=7.5)
-  ggarrange(p3a, p3b, p3c, p3d, nrow = 2, ncol = 2, labels = 'auto', align='hv', vjust = 1)
+  print(ggarrange(p3a, p3b, p3c, p3d, nrow = 2, ncol = 2, labels = 'auto', align='hv', vjust = 1))
   dev.off()
   png('figure3.png', height=5, width=7.5, units = 'in', res=300)
-  ggarrange(p3a, p3b, p3c, p3d, nrow = 2, ncol = 2, labels = 'auto', align='hv', vjust = 1)
+  print(ggarrange(p3a, p3b, p3c, p3d, nrow = 2, ncol = 2, labels = 'auto', align='hv', vjust = 1))
   dev.off()
 }

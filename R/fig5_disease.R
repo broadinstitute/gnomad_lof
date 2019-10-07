@@ -358,9 +358,9 @@ figure5 = function() {
   p5b = partitioning_heritability_enrichment()
   p5c = enriched_traits()
   pdf('figure5.pdf', height=7, width=4.5)
-  ggarrange(p5a, p5b, p5c, ncol = 1, nrow = 3, align='v', labels = 'auto', vjust = 1)
+  print(ggarrange(p5a, p5b, p5c, ncol = 1, nrow = 3, align='v', labels = 'auto', vjust = 1))
   dev.off()
   png('figure5.png', height=7, width=4.5, units = 'in', res=300)
-  ggarrange(p5a, p5b, p5c, ncol = 1, nrow = 3, align='v', labels = 'auto', vjust = 1)
+  print(ggarrange(p5a, p5b, p5c, ncol = 1, nrow = 3, align='v', labels = 'auto', vjust = 1))
   dev.off()
 }

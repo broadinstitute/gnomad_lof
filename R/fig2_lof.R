@@ -334,35 +334,33 @@ figure2 = function() {
   p2c = figure2c() + theme(plot.margin = margin(5.5, 8.5, 5.5, 5.5))
   p2d = figure2d() + theme(plot.margin = margin(5.5, 8.5, 5.5, 5.5))
   pdf('figure2.pdf', height=6, width=9)
-  ggarrange(p2a, p2c, p2b, p2d, ncol = 2, nrow = 2, 
-            labels = c('a', 'c', 'b', 'd'), align = 'v', vjust = 1, widths=c(1.25, 1))
+  print(ggarrange(p2a, p2c, p2b, p2d, ncol = 2, nrow = 2,
+                  labels = c('a', 'c', 'b', 'd'), align = 'v', vjust = 1, widths=c(1.25, 1)))
   dev.off()
   png('figure2.png', height=6, width=9, units = 'in', res=300)
-  ggarrange(p2a, p2c, p2b, p2d, ncol = 2, nrow = 2, 
-            labels = c('a', 'c', 'b', 'd'), align = 'v', vjust = 1, widths=c(1.25, 1))
+  print(ggarrange(p2a, p2c, p2b, p2d, ncol = 2, nrow = 2,
+                  labels = c('a', 'c', 'b', 'd'), align = 'v', vjust = 1, widths=c(1.25, 1)))
   dev.off()
   
   #### Some summary statistics
-  function() {
-    gene_data %$%
-      cor.test(obs_syn, exp_syn)
-    
-    gene_data %>% 
-      summarize(old_over_10 = sum(exac_exp_lof >= 10, na.rm=T), 
-                new_over_10 = sum(exp_lof >= 10, na.rm=T),
-                old_over_0 = sum(exac_exp_lof >= 0, na.rm=T), 
-                new_over_0 = sum(exp_lof >= 0, na.rm=T),
-                n=n(),
-                old_median = median(exac_exp_lof, na.rm=T),
-                new_median = median(exp_lof, na.rm=T),
-                prop_old_v2 = old_over_10 / old_over_0,
-                prop_new_v2 = new_over_10 / new_over_0
-      )
-    gene_data %>% 
-      summarize(median = median(oe_lof, na.rm=T),
-                mean = mean(oe_lof, na.rm=T),
-                median_u = median(oe_lof_upper, na.rm=T),
-                mean_u = mean(oe_lof_upper, na.rm=T)
-      )
-  }
+  gene_data %$%
+    cor.test(obs_syn, exp_syn)
+  
+  gene_data %>% 
+    summarize(old_over_10 = sum(exac_exp_lof >= 10, na.rm=T), 
+              new_over_10 = sum(exp_lof >= 10, na.rm=T),
+              old_over_0 = sum(exac_exp_lof >= 0, na.rm=T), 
+              new_over_0 = sum(exp_lof >= 0, na.rm=T),
+              n=n(),
+              old_median = median(exac_exp_lof, na.rm=T),
+              new_median = median(exp_lof, na.rm=T),
+              prop_old_v2 = old_over_10 / old_over_0,
+              prop_new_v2 = new_over_10 / new_over_0
+    )
+  gene_data %>% 
+    summarize(median = median(oe_lof, na.rm=T),
+              mean = mean(oe_lof, na.rm=T),
+              median_u = median(oe_lof_upper, na.rm=T),
+              mean_u = mean(oe_lof_upper, na.rm=T)
+    )
 }

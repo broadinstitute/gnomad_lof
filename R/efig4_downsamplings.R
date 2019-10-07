@@ -183,10 +183,10 @@ efigure4 = function() {
   e4e = downsampling_by_pop()
   e4f = downsampling_by_pop(plot_log=F)
   pdf('extended_data_figure4.pdf', height=9, width=8.5)
-  ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v')
+  print(ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v'))
   dev.off()
   png('extended_data_figure4.png', height=9, width=8.5, units = 'in', res=300)
-  ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v')
+  print(ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v'))
   dev.off()
 }
 
@@ -196,10 +196,10 @@ sfigure3 = function() {
   s3a = fig1split[[2]]
   s3b = prop_observed_by_class(split_methylation=T)
   pdf('supplementary_figure1.pdf', height=7, width=8)
-  ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
   png('supplementary_figure1.png', height=7, width=8, units = 'in', res=300)
-  ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v')
+  print(ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
 }
 

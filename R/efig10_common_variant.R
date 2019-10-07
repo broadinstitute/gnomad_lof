@@ -96,10 +96,10 @@ efigure10 = function() {
   e10c = enrichment_corrections()
   e10top = ggarrange(e10a, e10b, nrow = 1, ncol = 2, labels = 'auto', vjust = 1)
   pdf('extended_data_figure10.pdf', height=6, width=7.5)
-  ggarrange(e10top, e10c, nrow = 2, ncol = 1, labels = c('', 'c'), vjust = 1)
+  print(ggarrange(e10top, e10c, nrow = 2, ncol = 1, labels = c('', 'c'), vjust = 1))
   dev.off()
   png('extended_data_figure10.png', height=6, width=7.5, units = 'in', res=300)
-  ggarrange(e10top, e10c, nrow = 2, ncol = 1, labels = c('', 'c'), vjust = 1)
+  print(ggarrange(e10top, e10c, nrow = 2, ncol = 1, labels = c('', 'c'), vjust = 1))
   dev.off()
 }
 
