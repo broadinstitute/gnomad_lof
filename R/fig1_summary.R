@@ -80,13 +80,14 @@ summary_figure = function(data_type = 'exomes', group_splice=T, intergenic=F, le
               proportion_observed = observed / possible,
               singletons=sum(singletons), 
               po_sem = 1.96 * sqrt(proportion_observed * (1 - proportion_observed) / possible)) %>%
-    mutate(methylation=as.factor(split_methylation * methylation_level)) %>%
     filter(possible > 100)
+  if (split_methylation) {
+    obs_poss_plot_final = obs_poss_plot_final %>% mutate(methylation=as.factor(methylation_level))
+  }
   
   p1prop = obs_poss_plot_final %>%
     ggplot + aes(x = csq, y = proportion_observed, color = variant_type, 
-                 ymin = proportion_observed - po_sem, ymax = proportion_observed + po_sem,
-                 shape = methylation) + 
+                 ymin = proportion_observed - po_sem, ymax = proportion_observed + po_sem) + 
     geom_pointrange() + geom_point(size=2.5) + xlab(NULL) + 
     theme_classic() + scale_color_manual(values=variant_type_colors, guide='none') + 
     scale_y_continuous(labels=percent_format(accuracy = 1), position=y_axis_position, limits=po_limits)
@@ -104,7 +105,7 @@ summary_figure = function(data_type = 'exomes', group_splice=T, intergenic=F, le
     #   annotate('point', x = 'nonsense', y = top_point * 0.9, shape = 17, size = 2.5, color = color_cpg) + 
     #   annotate('point', x = 'nonsense', y = top_point * 0.85, shape = 16, size = 2.5, color = color_cpg) +
     #   annotate('text', x = 'nonsense', y = top_point, label = 'Methylation level', hjust = 1, color = color_cpg)
-    p1prop = p1prop + scale_shape_discrete(name='Methylation\nLevel', limits=c(2, 1, 0), labels=c('High', 'Medium', 'Unmethylated'), solid=T)
+    p1prop = p1prop + aes(shape = methylation) + scale_shape_discrete(name='Methylation\nLevel', limits=c(2, 1, 0), labels=c('High', 'Medium', 'Unmethylated'), solid=T)
   } else {
     p1prop = p1prop + guides(shape=F)
   }
