@@ -537,8 +537,13 @@ load_omim_data = function() {
     return
 }
 
-load_all_gene_list_data = function(list_dir = '../../gene_lists/lists/') {
-  gene_lists = map_df(list.files(list_dir, '.+tsv'), 
+load_all_gene_list_data = function(list_dir = 'gene_lists/lists/') {
+  all_files = list.files(list_dir, '.+tsv')
+  if (length(all_files) == 0) {
+    if (length(all_files) == 0) system('git clone https://github.com/macarthur-lab/gene_lists.git')
+    all_files = list.files(list_dir, '.+tsv')
+  }
+  gene_lists = map_df(all_files, 
                       function(x) read_tsv(paste(list_dir, x, sep = '/'), 
                                            col_names = F, col_types = cols()
                       ) %>% 

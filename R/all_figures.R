@@ -1,3 +1,4 @@
+source('constants.R')
 
 start_time <- Sys.time()
 source('fig1_summary.R')
