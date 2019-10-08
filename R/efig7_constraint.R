@@ -324,51 +324,53 @@ sfigure6 = function() {
   dev.off()
 }
 
-get_expected_projection_data = function() {
-  ds_gene = load_downsampled_gene_data()
-  gene_data = ds_gene %>%
-    filter(canonical & pop == 'global' & downsampling >= 100) %>%
-    group_by(gene) %>%
-    filter(min(exp_lof) > 0 & min(exp_mis) > 0 & min(exp_syn) > 0) %>%
-    mutate(log_exp_lof=log10(exp_lof), 
-           log_exp_mis=log10(exp_mis),
-           log_exp_syn=log10(exp_syn),
-           log_n=log10(downsampling)) %>%
-    do(lof_fit = lm(log_exp_lof ~ log_n, data = .),
-       mis_fit = lm(log_exp_mis ~ log_n, data = .),
-       syn_fit = lm(log_exp_syn ~ log_n, data = .))
-  
-  n_lof = 10
-  gene_lof_fit = gene_data %>% tidy(lof_fit) %>% 
-    summarize(slope=sum(estimate*(term == 'log_n')), intercept=sum(estimate*(term == '(Intercept)')))
-  gene_mis_fit = gene_data %>% tidy(mis_fit) %>%
-    summarize(slope=sum(estimate*(term == 'log_n')), intercept=sum(estimate*(term == '(Intercept)')))
-  
-  post_process_predictions <- function(data) {
-    data %>%
-      mutate(`5` = 10 ^ ((log10(5) - intercept) / slope),
-             `10` = 10 ^ ((log10(10) - intercept) / slope),
-             `20` = 10 ^ ((log10(20) - intercept) / slope),
-             `50` = 10 ^ ((log10(50) - intercept) / slope),
-             `100` = 10 ^ ((log10(100) - intercept) / slope)) %>%
-      select(-slope, -intercept) %>%
-      gather('n_variants', 'n_required', -gene) %>%
-      mutate(n_variants = as.numeric(n_variants)) %>%
-      group_by(n_variants) %>%
-      mutate(rank=percent_rank(n_required)) %>% ungroup
+get_expected_projection_data = function(force_recompute=F) {
+  fname = 'supplementary_dataset_12_n_required.tsv.gz'
+  if (!force_recompute) {
+    fname = get_or_download_file(fname, subfolder = 'misc_files/')
+  } else {
+    ds_gene = load_downsampled_gene_data()
+    gene_data = ds_gene %>%
+      filter(canonical & pop == 'global' & downsampling >= 100) %>%
+      group_by(gene) %>%
+      filter(min(exp_lof) > 0 & min(exp_mis) > 0 & min(exp_syn) > 0) %>%
+      mutate(log_exp_lof=log10(exp_lof), 
+             log_exp_mis=log10(exp_mis),
+             log_exp_syn=log10(exp_syn),
+             log_n=log10(downsampling)) %>%
+      do(lof_fit = lm(log_exp_lof ~ log_n, data = .),
+         mis_fit = lm(log_exp_mis ~ log_n, data = .),
+         syn_fit = lm(log_exp_syn ~ log_n, data = .))
+    
+    n_lof = 10
+    gene_lof_fit = gene_data %>% tidy(lof_fit) %>% 
+      summarize(slope=sum(estimate*(term == 'log_n')), intercept=sum(estimate*(term == '(Intercept)')))
+    gene_mis_fit = gene_data %>% tidy(mis_fit) %>%
+      summarize(slope=sum(estimate*(term == 'log_n')), intercept=sum(estimate*(term == '(Intercept)')))
+    
+    post_process_predictions <- function(data) {
+      data %>%
+        mutate(`5` = 10 ^ ((log10(5) - intercept) / slope),
+               `10` = 10 ^ ((log10(10) - intercept) / slope),
+               `20` = 10 ^ ((log10(20) - intercept) / slope),
+               `50` = 10 ^ ((log10(50) - intercept) / slope),
+               `100` = 10 ^ ((log10(100) - intercept) / slope)) %>%
+        select(-slope, -intercept) %>%
+        gather('n_variants', 'n_required', -gene) %>%
+        mutate(n_variants = as.numeric(n_variants)) %>%
+        group_by(n_variants) %>%
+        mutate(rank=percent_rank(n_required)) %>% ungroup
+    }
+    samples_required_lof = post_process_predictions(gene_lof_fit)
+    samples_required_mis = post_process_predictions(gene_mis_fit)
+    output_file = gzfile(paste0('data/', fname), 'w')
+    samples_required_lof %>% mutate(variant_type = 'pLoF') %>%
+      union_all(samples_required_mis %>% mutate(variant_type = 'missense')) %>%
+      write.table(output_file, quote=F, row.names = F, sep = '\t')
+    close(output_file)
   }
-  samples_required_lof = post_process_predictions(gene_lof_fit)
-  samples_required_mis = post_process_predictions(gene_mis_fit)
-  return(list(samples_required_lof, samples_required_mis))
+  read_delim(gzfile(fname), delim = '\t')
 }
-proj_data = get_expected_projection_data()
-samples_required_lof = proj_data[[1]]
-samples_required_mis = proj_data[[2]]
-output_file = gzfile('data/supplementary_dataset_12_n_required.tsv.gz', 'w')
-samples_required_lof %>% mutate(variant_type = 'pLoF') %>%
-  union_all(samples_required_mis %>% mutate(variant_type = 'missense')) %>%
-  write.table(output_file, quote=F, row.names = F, sep = '\t')
-close(output_file)
 
 expected_projections = function(projection_df, label='pLoF') {
   # samples_required_lof %>%
@@ -400,8 +402,9 @@ expected_projections = function(projection_df, label='pLoF') {
 }
 
 sfigure7 = function() {
-  s7a = expected_projections(samples_required_lof)
-  s7b = expected_projections(samples_required_mis, 'Missense')
+  projection_data = get_expected_projection_data()
+  s7a = expected_projections(projection_data %>% filter(variant_type == 'pLoF'))
+  s7b = expected_projections(projection_data %>% filter(variant_type == 'missense'), 'Missense')
   pdf('supplementary_figure7.pdf', height=6, width=6)
   print(ggarrange(s7a, s7b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
