@@ -357,9 +357,11 @@ def main(args):
         ht = select_primitives_from_ht(ht)
         ht.export(all_lof_metrics_path.format(extension='by_transcript.txt.bgz'))
         if args.by_transcript:
+            ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
             ht = ht.filter(ht.canonical)
-            ht = add_rank(ht, 'oe_lof_upper', defined_only=True).drop('canonical')
+            ht = add_rank(ht, 'oe_lof_upper', defined_only=True).drop('canonical').key_by('gene_id', 'gene')
             ht.write(all_lof_metrics_path.format(extension='by_gene.ht'), args.overwrite)
+            ht = select_primitives_from_ht(ht)
             ht.export(all_lof_metrics_path.format(extension='by_gene.txt.bgz'))
 
         ht = hl.read_table(all_lof_metrics_path.format(extension='by_transcript.ht'))
