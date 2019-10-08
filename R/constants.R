@@ -465,7 +465,7 @@ cumulative_maps = function(data, prefix='maps') {
            temptemp_upper=temptemp + 1.96 * temptemp_sem,
            temptemp_lower=temptemp - 1.96 * temptemp_sem) %>% 
     rename_at(vars(temptemp_singleton_count:temptemp_lower), 
-              list(paste0(prefix, str_sub(as.character(.), 9))))
+              function(x) paste0(prefix, str_sub(as.character(x), 9)))
   return(maps)
 }
 

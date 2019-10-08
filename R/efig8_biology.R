@@ -136,24 +136,30 @@ number_of_go_terms_by_constraint = function(save_plot=F) {
 }
 
 get_pharos_categories = function() {
-  pharos.ids <- gene_data$gene %>% unique
-  pharos.ids <- paste0("'", pharos.ids, "'")
-  pharos.db = dbConnect(dbDriver("MySQL"), user='tcrd', dbname='tcrd520',
-                        host='tcrd.kmc.io')
-  query <- paste0('SELECT id, sym FROM protein WHERE sym IN (', 
-                  paste0(pharos.ids, collapse = ', '), ');')
-  ids <- dbGetQuery(pharos.db, query) %>%
-    distinct()
-  
-  query2 <-  paste0('SELECT id, tdl FROM target WHERE id IN (', 
-                    paste0(ids$id, collapse = ', '), ');')
-  
-  tdl <- dbGetQuery(pharos.db, query2)
-  
-  dbDisconnect(pharos.db)
-  
-  tdl %>% left_join(ids, by='id') %>%
-    return
+  fname = '../misc_files/pharos_data.tsv'
+  if (file.exists(fname)) {
+    pharos_data = read.delim(fname, sep = '\t')
+  } else {
+    pharos.ids <- gene_data$gene %>% unique
+    pharos.ids <- paste0("'", pharos.ids, "'")
+    pharos.db = dbConnect(dbDriver("MySQL"), user='tcrd', dbname='tcrd540',
+                          host='tcrd.kmc.io')
+    query <- paste0('SELECT id, sym FROM protein WHERE sym IN (', 
+                    paste0(pharos.ids, collapse = ', '), ');')
+    ids <- dbGetQuery(pharos.db, query) %>%
+      distinct()
+    
+    query2 <-  paste0('SELECT id, tdl FROM target WHERE id IN (', 
+                      paste0(ids$id, collapse = ', '), ');')
+    
+    tdl <- dbGetQuery(pharos.db, query2)
+    
+    dbDisconnect(pharos.db)
+    
+    pharos_data = tdl %>% left_join(ids, by='id')
+    write.table(pharos_data, fname, quote=F, row.names=F, sep='\t')
+  }
+  return(pharos_data)
 }
 tdl = get_pharos_categories()
   

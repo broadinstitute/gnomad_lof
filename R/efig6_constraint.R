@@ -183,10 +183,10 @@ efigure6 = function() {
   e6g = correlation_plots(data_type = 'mis')
   e6h = correlation_plots(data_type = 'lof')
   pdf('extended_data_figure6.pdf', height=9, width=6)
-  ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1)
+  print(ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1))
   dev.off()
   png('extended_data_figure6.png', height=9, width=6, units = 'in', res=300)
-  ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1)
+  print(ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1))
   dev.off()
   # print(ef5)
 }
