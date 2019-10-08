@@ -583,7 +583,7 @@ rvis_comparisons = function(outcome_var='is_hi', add_pLI=F, add_exac_pLI=F, add_
     p = rvis_compare_data %>%
       mutate(pLI = -pLI,
              exac_pLI = -exac_pLI,
-             NFE_s_het = -NFE_s_het,
+             # NFE_s_het = -NFE_s_het,
              RVIS = `RVIS[pop_maf_0.05%(any)]`,
              LOEUF = oe_lof_upper) %>%
       select_at(vars(plot_vars)) %>%
