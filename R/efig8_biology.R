@@ -249,9 +249,17 @@ permute_most_constrained = function(tx_disease_gene) {
     filter(most_expressed) %$%
     mean(most_constrained_transcript)
 }
-most_constrained_background_distribution = replicate(10000, permute_most_constrained(tx_disease_gene))
 
-percent_most_expressed_also_most_constrained = function(save_plot=F) {
+percent_most_expressed_also_most_constrained = function(save_plot=F, force_permutation=F) {
+  fname = 'most_constrained_transcript.RData'
+  if (!force_permutation) {
+    fname = get_or_download_file(fname, subfolder = 'misc_files/')
+  } else {
+    set.seed(42)
+    most_constrained_background_distribution = replicate(10000, permute_most_constrained(tx_disease_gene))
+    save(most_constrained_background_distribution, file=paste0('data/', fname))
+  }
+  most_constrained_background_distribution = get(load(paste0('data/', fname)))
   tx_disease_gene %>%
     # group_by(gene) %>%
     filter(!is.na(most_expressed)) %$% # & n() > 8) %>% ungroup %$% 
