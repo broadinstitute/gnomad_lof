@@ -494,12 +494,12 @@ load_rvis_comparison_data = function() {
                            `OE-ratio_[ExAC v2]` = col_double(),
                            `%OE-ratio_[ExAC v2]` = col_double()))
   
-  s_het = read_xlsx('../misc_files/ng.3831-S2.xlsx')
+  # s_het = read_xlsx('../misc_files/ng.3831-S2.xlsx')
   
   joined_data = gene_data %>%
-    inner_join(rvis_data, by=c('gene' = 'CCDSr20')) %>%
-    left_join(s_het, by=c('gene' = 'gene_symbol')) %>%
-    mutate(NFE_s_het = as.numeric(NFE_s_het))
+    inner_join(rvis_data, by=c('gene' = 'CCDSr20')) #%>%
+    # left_join(s_het, by=c('gene' = 'gene_symbol')) %>%
+    # mutate(NFE_s_het = as.numeric(NFE_s_het))
   
   de_novo_data = get_de_novo_data() %>%
     filter(group %in% c('ddid', 'Control')) %>%
