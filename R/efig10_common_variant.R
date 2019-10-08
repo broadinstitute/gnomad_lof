@@ -40,10 +40,10 @@ enrichment_corrections = function(save_plot=F) {
              (is.na(cor_rm0.2) | cor_rm0.2 == 0)  # Select uncorrelated variables
     )
   enrichment_correction_data = ddply(filt_sum_stats, c('name', 'cond'), function(x) {
-    enrichment = x$enrichment
-    enrichment_SE = x$enrichment_SE
-    meta_enrichment = metagen(enrichment, enrichment_SE)$TE.random
-    meta_sd = metagen(enrichment, enrichment_SE)$seTE.random
+    taustar = x$taustar
+    se = x$se
+    meta_enrichment = metagen(taustar, se)$TE.random
+    meta_sd = metagen(taustar, se)$seTE.random
     return(data.frame(meta_enrichment, meta_sd))
   }) %>%
     mutate(decile = as.integer(str_sub(name, -1)),
