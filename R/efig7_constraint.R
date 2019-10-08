@@ -728,7 +728,7 @@ plot_constraint_by_downsampling = function(outcome_var='is_hi', ylabel='AUC (Hap
     ggplot + aes(x = downsampling, y = aucs) + 
     geom_line(size=1) + xlab('Sample size') + 
     theme(plot.margin = margin(t = 5.5, r = 12.5, b = 5.5, l = 5.5)) + 
-    scale_x_continuous(breaks=ds_breaks) + ylab(ylabel)
+    scale_x_continuous(breaks=ds_breaks) + ylab(ylabel) + theme_classic()
   
   if (save_plot) {
     pdf('constraint_by_downsampling.pdf', height=3, width=4)

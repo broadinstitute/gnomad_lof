@@ -190,16 +190,16 @@ efigure4 = function() {
   dev.off()
 }
 
-sfigure3 = function() {
+sfigure5 = function() {
   fig1split = summary_figure('exomes', group_splice = T, intergenic = F,
                              maps_limits=c(NA, 0.18), po_limits=c(NA, 1), split_methylation = T, keep_x_labels = T)
-  s3a = fig1split[[2]]
-  s3b = prop_observed_by_class(split_methylation=T)
-  pdf('supplementary_figure1.pdf', height=7, width=8)
-  print(ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
+  s5a = fig1split[[2]]
+  s5b = prop_observed_by_class(split_methylation=T)
+  pdf('supplementary_figure5.pdf', height=7, width=8)
+  print(ggarrange(s5a, s5b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
-  png('supplementary_figure1.png', height=7, width=8, units = 'in', res=300)
-  print(ggarrange(s3a, s3b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
+  png('supplementary_figure5.png', height=7, width=8, units = 'in', res=300)
+  print(ggarrange(s5a, s5b, ncol = 1, nrow = 2, labels = 'auto', align = 'v'))
   dev.off()
 }
 
