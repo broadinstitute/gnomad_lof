@@ -32,7 +32,7 @@ efigure8()
 efigure9()
 efigure10()
 
-sfigure3()
+sfigure5()
 sfigure6()
 sfigure7()
 sfigure8()

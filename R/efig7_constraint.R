@@ -457,11 +457,11 @@ sfigure8 = function() {
     scale_color_manual(values=gene_list_colors, guide=F) +
     facet_grid(oe_lof_upper_bin ~ gene_list) +
     theme(strip.text = element_text(size = 48))
-  pdf('supplementary_figure_8.pdf', height=100, width=65)
+  pdf('supplementary_figure8.pdf', height=100, width=65)
   print(p)
   dev.off()
   res = 72
-  png('supplementary_figure_8.png', height=100*res, width=65*res, res=res)
+  png('supplementary_figure8.png', height=100*res, width=65*res, res=res)
   print(p)
   dev.off()
   
