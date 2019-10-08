@@ -182,8 +182,15 @@ efigure4 = function() {
   e4d = observed_by_function()
   e4e = downsampling_by_pop()
   e4f = downsampling_by_pop(plot_log=F)
+  extra_margin = 6
   pdf('extended_data_figure4.pdf', height=9, width=8.5)
-  print(ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v'))
+  print(ggarrange(e4a + theme(plot.margin = unit(c(5.5, 5.5, 5.5 + extra_margin, 5.5), "pt")), 
+                  e4b + theme(plot.margin = unit(c(5.5, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e4c + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e4d + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e4e + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5, 5.5), "pt")),
+                  e4f + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5, 5.5), "pt")),
+                  ncol = 2, nrow = 3, labels = 'auto', align = 'v'))
   dev.off()
   png('extended_data_figure4.png', height=9, width=8.5, units = 'in', res=300)
   print(ggarrange(e4a, e4b, e4c, e4d, e4e, e4f, ncol = 2, nrow = 3, labels = 'auto', align = 'v'))

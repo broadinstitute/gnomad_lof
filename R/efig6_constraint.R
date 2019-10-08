@@ -182,8 +182,17 @@ efigure6 = function() {
   e6f = correlation_plots()
   e6g = correlation_plots(data_type = 'mis')
   e6h = correlation_plots(data_type = 'lof')
+  extra_margin = 6
   pdf('extended_data_figure6.pdf', height=9, width=6)
-  print(ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1))
+  print(ggarrange(e6a + theme(plot.margin = unit(c(5.5, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6b + theme(plot.margin = unit(c(5.5, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6c + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6d + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6e + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6f + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5 + extra_margin, 5.5), "pt")),
+                  e6g + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5, 5.5), "pt")),
+                  e6h + theme(plot.margin = unit(c(5.5 + extra_margin, 5.5, 5.5, 5.5), "pt")),
+                  nrow = 4, ncol = 2, labels='auto', vjust = 1))
   dev.off()
   png('extended_data_figure6.png', height=9, width=6, units = 'in', res=300)
   print(ggarrange(e6a, e6b, e6c, e6d, e6e, e6f, e6g, e6h, nrow = 4, ncol = 2, labels='auto', vjust = 1))
