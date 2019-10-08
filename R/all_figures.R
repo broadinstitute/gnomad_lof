@@ -32,5 +32,13 @@ efigure8()
 efigure9()
 efigure10()
 
+sfigure3()
+sfigure6()
+sfigure7()
+sfigure8()
+sfigure9()
+sfigure10()
+
+
 end_time <- Sys.time()
 end_time - start_time
