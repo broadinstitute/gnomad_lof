@@ -1,14 +1,18 @@
 sum_stats = load_sum_stats()
 tau_star = function(save_plot=F, normalize=F) {
   
-  tau_data = sum_stats %>%
+  filt_sum_stats = sum_stats %>%
     filter(cond == 'all100' &
              grepl('oe_lof_upper_quantile_', name) &
              (is.na(cor_rm0.2) | cor_rm0.2 == 0)  # Select uncorrelated variables
-    ) %>%
-    group_by(name) %>%
-    summarise(meta_enrichment = metagen(taustar, se)$TE.random,
-              meta_sd = metagen(taustar, se)$seTE.random) %>%
+    )
+  tau_data = ddply(filt_sum_stats, 'name', function(x) {
+    taustar = x$taustar
+    se = x$se
+    meta_enrichment = metagen(taustar, se)$TE.random
+    meta_sd = metagen(taustar, se)$seTE.random
+    return(data.frame(meta_enrichment, meta_sd))
+  }) %>%
     mutate(decile = as.integer(str_sub(name, -1)),
            enrichment = ifelse(normalize, meta_enrichment / mean(meta_enrichment), meta_enrichment)
     )
