@@ -224,8 +224,12 @@ plot_expression_metrics_by_constraint = function(save_plot=F, only_canonical=T, 
       ylabel = paste('Mean', if_else(only_canonical, 'canonical ', ''), 'transcript expression')
     }
     
+    lm(n_tissues_expressed ~ oe_lof_upper + cds_length, all_tx) %>% summary
+    
     plot_data = all_tx %>%
       filter(!only_canonical | canonical)
+    
+    lm(n_tissues_expressed ~ oe_lof_upper + cds_length, plot_data) %>% summary
     
     cor.test(plot_data$metric, plot_data$oe_lof_upper)
     cor.test(plot_data$metric, plot_data$oe_lof_upper, method='spearman')

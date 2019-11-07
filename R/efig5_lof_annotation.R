@@ -366,8 +366,8 @@ variants_per_individual = function(data_type='exomes', save_plot=F) {
     summarize(total=sum(total), total_hom=sum(total_hom)) %>% ungroup
   
   # LoFs per individual
-  proc_vpi_data %>%
-    filter(protein_coding & bin != '>95%') %>%
+  lofs_per_individual = proc_vpi_data %>%
+    filter(protein_coding) %>%
     group_by(worst_csq, lof, no_lof_flags, bin, pop, lcr, curated, no_lof_flags) %>%
     summarize(total=sum(total), total_hom=sum(total_hom)) %>% ungroup %>%
     left_join(samples) %>%
@@ -378,13 +378,50 @@ variants_per_individual = function(data_type='exomes', save_plot=F) {
                              '1% - 10%', '10% - 95%', '>95%'),
            curated=is.na(curated) | curated) %>%
     filter(pop == 'global' & lof == 'HC') %>%
-    arrange(worst_csq, bin) %>%
+    arrange(worst_csq, bin) 
+  
+  lofs_per_individual %>%
+    filter(bin != '>95%') %>%
     group_by(lcr, curated, no_lof_flags) %>%
     summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind)) %>%
     ungroup %>%
     arrange(desc(no_lof_flags), lcr, desc(curated)) %>%
     mutate(var_per_ind = cumsum(var_per_ind), hom_per_ind=cumsum(hom_per_ind))
   
+  # Rare pLoFs per individual
+  lofs_per_individual %>%
+    filter(bin %in% c('Singleton', 'Doubleton', 'AC 3 - 5', 'AC 6 - 0.01%', '0.01% - 0.1%', '< 0.1%', '0.1% - 1%')) %>%
+    group_by(lcr, curated, no_lof_flags) %>%
+    summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind)) %>%
+    ungroup %>%
+    arrange(desc(no_lof_flags), lcr, desc(curated)) %>%
+    mutate(var_per_ind = cumsum(var_per_ind), hom_per_ind=cumsum(hom_per_ind))
+  
+  # Doubleton pLoFs per individual
+  lofs_per_individual %>%
+    filter(bin %in% c('Singleton', 'Doubleton')) %>%
+    group_by(lcr, curated, no_lof_flags) %>%
+    summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind)) %>%
+    ungroup %>%
+    arrange(desc(no_lof_flags), lcr, desc(curated)) %>%
+    mutate(var_per_ind = cumsum(var_per_ind), hom_per_ind=cumsum(hom_per_ind))
+  
+  # Private pLoFs per individual
+  lofs_per_individual %>%
+    filter(bin == 'Singleton') %>%
+    group_by(lcr, curated, no_lof_flags) %>%
+    summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind)) %>%
+    ungroup %>%
+    arrange(desc(no_lof_flags), lcr, desc(curated)) %>%
+    mutate(var_per_ind = cumsum(var_per_ind), hom_per_ind=cumsum(hom_per_ind))
+  
+  # Rare pLoFs per individual by class
+  lofs_per_individual %>%
+    filter(bin %in% c('Singleton', 'Doubleton', 'AC 3 - 5', 'AC 6 - 0.01%', '0.01% - 0.1%', '< 0.1%', '0.1% - 1%') &
+             !lcr & curated & no_lof_flags) %>%
+    group_by(worst_csq=ifelse(grepl('splice', worst_csq), 'essential splice', worst_csq)) %>%
+    summarize(var_per_ind = sum(var_per_ind), hom_per_ind = sum(hom_per_ind))
+
   if (save_plot) {
     pdf('variants_per_individual.pdf', height=3, width=4)
     print(p)

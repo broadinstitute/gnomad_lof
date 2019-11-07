@@ -165,6 +165,27 @@ proportion_high_pLI = function(save_plot=F) {
   return(p)
 }
 
+loeuf_v_gene_length = function(save_plot=F, metric='oe_lof_upper') {
+  p = gene_data %>%
+    filter(!is.na(oe_lof_upper_bin)) %>%
+    mutate(pLI_bin = ntile(pLI, 10) - 1) %>%
+    ggplot + aes_string(x = paste0(metric, '_bin'), group = paste0(metric, '_bin'), y = 'cds_length') +
+    geom_boxplot() + oe_x_axis + scale_y_continuous() +
+    coord_cartesian(ylim=c(0, 5000)) +
+    theme_classic() + ylab('CDS length')
+  
+  if (metric == 'pLI') {
+    p = p + xlab('pLI decile')
+  }
+  
+  if (save_plot) {
+    pdf(paste0('cds_length_', metric, '.pdf'), height=3, width=5)
+    print(p)
+    dev.off()
+  }
+  return(p)
+}
+
 caf_vs_constraint = function(save_plot=F) {
   gene_data %$%
     cor.test(oe_lof_upper, p, method='spearman')
@@ -548,7 +569,7 @@ rvis_comparisons = function(outcome_var='is_hi', add_pLI=F, add_exac_pLI=F, add_
         # `OE-ratio_[ExAC v2]` +
         cds_length,
       data=rvis_compare_data, family='binomial') %>%
-    summary
+    summary %>% print
   
   if (compute_partial_aucs) {
     rvis_compare_data %>%

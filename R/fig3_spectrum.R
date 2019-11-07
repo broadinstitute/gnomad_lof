@@ -24,6 +24,18 @@ gene_list_spectrum = function(save_plot=F,
   #   ungroup %>%
   #   mutate(gene_list = fct_relevel(gene_list, 'Haploinsufficient')) 
   
+  test_data = gene_data %>%
+    left_join(gene_lists) %>%
+    mutate(gene_list = if_else(grepl('haploinsufficiency', gene_list), 'Haploinsufficient', gene_list))
+  
+  all_sig_data = map_df(test_data %$% na.omit(unique(gene_list)), function(genel) {
+    test_data %>%
+      mutate(presence = gene_list == genel) %>%
+      do(tidy(glm(presence ~ oe_lof_upper + cds_length, ., family = 'binomial'))) %>%
+      mutate(gene_list=genel)
+  })
+  all_sig_data %>% filter(gene_list %in% c('Olfactory Genes', 'Haploinsufficient')) # , 'all_ar'))
+  
   gene_list_spectrum_data = gene_data %>%
     left_join(gene_lists) %>%
     mutate(gene_list = if_else(grepl('haploinsufficiency', gene_list), 'Haploinsufficient', gene_list),
@@ -107,6 +119,9 @@ sv_spectrum = function(save_plot=F) {
   lm(observed_rare_biallelic_LoF_deletions/expected_rare_biallelic_LoF_deletions ~ oe_lof_upper, gene_plus_sv) %>%
     summary
   
+  lm(observed_rare_biallelic_LoF_deletions/expected_rare_biallelic_LoF_deletions ~ oe_lof_upper + cds_length, gene_plus_sv) %>%
+    summary
+  
   gene_plus_sv %>%
     # filter(!is.na(expected_rare_biallelic_LoF_deletions)) %>%
     # mutate(oe_lof_upper_bin=ntile(oe_lof_upper_bin, 10)) %>%
@@ -172,6 +187,12 @@ t_test_gene_list = function(gene_data, specific_gene_list) {
 }
 
 mouse_ko_comparison = function(save_plot=F) {
+  gene_data %>%
+    left_join(get_ko_gene_lists() %>% filter(gene_list == 'mouse_het_lethal_genes')) %>%
+    mutate(mouse_ko = !is.na(gene_list)) %>%
+    glm(mouse_ko ~ oe_lof_upper + cds_length, ., family='binomial') %>%
+    summary
+  
   p = get_proportion_in_gene_lists(gene_data) %>%
     filter(gene_list == 'mouse_het_lethal_genes') %>%
     ggplot + aes(x = oe_lof_upper_bin, y = prop_in_bin, 
@@ -192,6 +213,17 @@ mouse_ko_comparison = function(save_plot=F) {
 }
 
 cell_ko_comparison = function(save_plot=F) {
+  gene_data %>%
+    left_join(get_ko_gene_lists() %>% filter(gene_list == 'CEGv2')) %>%
+    mutate(cell_essential = !is.na(gene_list)) %>%
+    glm(cell_essential ~ oe_lof_upper + cds_length, ., family='binomial') %>%
+    summary
+  gene_data %>%
+    left_join(get_ko_gene_lists() %>% filter(gene_list == 'NEGv1')) %>%
+    mutate(cell_non_essential = !is.na(gene_list)) %>%
+    glm(cell_non_essential ~ oe_lof_upper + cds_length, ., family='binomial') %>%
+    summary
+  
   lists_to_plot = c('CEGv2' = color_lof,
                     'NEGv1' = color_benign)
   lists_labels = c('CEGv2' = 'Cell essential',

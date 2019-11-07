@@ -179,6 +179,15 @@ functional_categorization = function(save_plot=F) {
     'weaker drug activites' = 'tan1',  # color_recessive,
     'no known ligands' = color_syn # color_benign
   )
+  
+  map_df(rename_list, function(x) {
+    gene_data %>%
+      left_join(tdl %>% filter(tdl == x), by=c('gene' = 'sym')) %>%
+      glm(!is.na(tdl) ~ oe_lof_upper + cds_length, ., family='binomial') %>%
+      tidy %>%
+      mutate(tdl = x)
+  })
+  
   tdl.freqs <- tdl_gene_data %>%
     mutate(tdl=fct_recode(tdl, !!!rename_list),
            tdl=fct_relevel(tdl, names(rename_list))) %>%
