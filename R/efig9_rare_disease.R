@@ -123,8 +123,10 @@ omim_over_time = function(save_plot=F) {
 }
 
 scz_rare_variants = function(save_plot=F, csqs_to_plot=c('Synonymous', 'pLoF')) {
-  scz_data = read_tsv('data/scz.summary.constraint_bins.1211818.tsv') %>%
-    mutate(csq=fct_relevel(fct_recode(csq, Missense = 'missense', Synonymous = 'synonymous')), 'pLoF')
+  fname = get_or_download_file('scz.summary.constraint_bins.110919.tsv', 'misc_files/')
+  
+  scz_data = read_tsv('data/scz.summary.constraint_bins.110919.tsv') %>%
+    mutate(csq=fct_relevel(fct_recode(csq, Missense = 'missense', Synonymous = 'synonymous', pLoF = 'LOF')))
   
   p = scz_data %>%
     filter(csq %in% csqs_to_plot) %>%
