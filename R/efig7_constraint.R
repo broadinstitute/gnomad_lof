@@ -166,13 +166,19 @@ proportion_high_pLI = function(save_plot=F) {
 }
 
 loeuf_v_gene_length = function(save_plot=F, metric='oe_lof_upper') {
+  gene_data %>%
+    filter(!is.na(oe_lof_upper_bin)) %>%
+    lm(oe_lof_upper ~ cds_length, .) %>%
+    summary
+  
   p = gene_data %>%
     filter(!is.na(oe_lof_upper_bin)) %>%
     mutate(pLI_bin = ntile(pLI, 10) - 1) %>%
     ggplot + aes_string(x = paste0(metric, '_bin'), group = paste0(metric, '_bin'), y = 'cds_length') +
-    geom_boxplot() + oe_x_axis + scale_y_continuous() +
+    geom_boxplot(aes(fill = oe_lof_upper_bin)) + oe_x_axis + scale_y_continuous() +
     coord_cartesian(ylim=c(0, 5000)) +
-    theme_classic() + ylab('CDS length')
+    scale_fill_gradientn(colors = gradient_colors, values = rescale(gradient_values), guide = FALSE) +
+    theme_classic() + ylab('CDS length') 
   
   if (metric == 'pLI') {
     p = p + xlab('pLI decile')
@@ -300,22 +306,26 @@ efigure7 = function() {
   e7a = oe_distribution()
   e7b = oe_distribution(metric = 'oe_lof_upper')
   e7c = oe_2d_density()
+  e7c2 = loeuf_v_gene_length()
   e7d = variant_depletions()
   e7e = proportion_high_pLI()
   e7f = prop_homozygous()
   e7g = caf_vs_constraint()
   e7row1 = egg::ggarrange(plots=list(e7a, e7b), labels=c('a', 'b'), align = 'v', ncol = 2, 
                         label.args=list(gp=grid::gpar(font=2, cex=1.2)))
-  e7row34 = egg::ggarrange(plots=list(e7d, e7e, e7f, e7g), labels=c('d', 'e', 'f', 'g'), align = 'v', nrow = 2, ncol = 2, 
+  # e7c = egg::set_panel_size(e7c, width=unit(2, 'in'))
+  e7row2 = egg::ggarrange(plots=list(e7c, e7c2), labels=c('c', 'd'), align = 'v', nrow = 1, ncol = 2, 
+                          label.args=list(gp=grid::gpar(font=2, cex=1.2)))
+  e7row34 = egg::ggarrange(plots=list(e7d, e7e, e7f, e7g), labels=c('e', 'f', 'g', 'h'), align = 'v', nrow = 2, ncol = 2, 
                          label.args=list(gp=grid::gpar(font=2, cex=1.2)))
   pdf('extended_data_figure7.pdf', height=8, width=7.5, onefile = F)
   # egg::ggarrange(plots=list(a, b, c, d, e, f, g),
   #                nrow = 4, ncol = 2, align = 'v', 
   #                labels = c('a', 'b', 'c', 'd', 'e', 'f', 'g'), 
   #                label.args=list(gp=grid::gpar(font=2, cex=1.2)), vjust = 1)
-  print(ggarrange(e7row1, egg::set_panel_size(e7c, width=unit(2, 'in')), e7row34, align='hv',
+  print(ggarrange(e7row1, e7row2, e7row34, #align='hv',
             nrow = 3, ncol = 1,
-            labels = c('', 'c', ''),
+            labels = c('', '', ''),
             heights = c(1, 1, 2)
   ))
   dev.off()
