@@ -19,6 +19,12 @@ constraint_by_omim_discovery = function(save_plot=F, histograms=T) {
     print
   
   constraint_with_year %>%
+    mutate(NGS=discoverybyNGS == 'WES/WGS') %>%
+    summarize(ttest = list(glm(NGS ~ oe_lof_upper + cds_length, family='binomial'))) %>%
+    tidy(ttest) %>%
+    print
+  
+  constraint_with_year %>%
     ggplot + aes(x = year, y = oe_lof_upper) + geom_point() + geom_smooth()
   
   constraint_with_year %>%
@@ -147,6 +153,10 @@ proportion_in_omim = function(save_plot=F) {
   
   gene_omim_data %>%
     summarize(ttest = list(t.test(oe_lof_upper ~ in_omim))) %>%
+    tidy(ttest)
+  
+  gene_omim_data %>%
+    summarize(ttest = list(glm(in_omim ~ oe_lof_upper + cds_length, family='binomial'))) %>%
     tidy(ttest)
   
   p = gene_omim_data %>%
