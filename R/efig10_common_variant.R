@@ -55,9 +55,10 @@ enrichment_corrections = function(save_plot=F) {
   p = enrichment_correction_data %>%
     ggplot + aes(x = decile, y = meta_enrichment, 
                  ymin = meta_enrichment - 1.96 * meta_sd, ymax = meta_enrichment + 1.96 * meta_sd) + 
-    geom_bar(stat="identity", col="black", position=position_dodge()) + 
-    geom_errorbar(stat="identity", width = 0.5, col="black", position=position_dodge(width=0.9)) + 
+    geom_point(stat="identity", col="black", position=position_dodge()) + 
+    geom_pointrange() + 
     theme_classic() + ylab(expression(paste(tau^"*"))) + 
+    geom_hline(yintercept = 0, col = "darkgray", linetype = 'dashed') +
     oe_x_axis + facet_wrap(~cond) #+ theme(panel.spacing = unit(0.1, "lines"))
   
   if (save_plot) {

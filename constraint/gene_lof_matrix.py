@@ -54,7 +54,7 @@ def load_gene_expression_data():
 
 
 def load_exac_pli_data():
-    exac_pli = hl.import_table(f'{root}/old_exac_data/fordist_cleaned_exac_r03_march16_z_pli_rec_null_data.txt.gz', impute=True)
+    exac_pli = hl.import_table(f'{root}/old_exac_data/fordist_cleaned_exac_r03_march16_z_pli_rec_null_data.txt.gz', impute=True, force_bgz=True)
     return exac_pli.key_by(transcript=exac_pli.transcript.split('\\.')[0])
 
 
@@ -65,10 +65,10 @@ def add_rank(ht, field, ascending=True, total_genes=None, bins=10, defined_only=
         else:
             total_genes = ht.count()
     rank_field = ht[field] if ascending else -ht[field]
-    ht = ht.key_by(_rank=rank_field).add_index(f'{field}_rank').key_by()
+    ht = ht.order_by(rank_field).add_index(f'{field}_rank')
     ht = ht.annotate(**{f'{field}_rank': hl.or_missing(
-        hl.is_defined(ht._rank), ht[f'{field}_rank']
-    )}).drop('_rank')
+        hl.is_defined(ht[field]), ht[f'{field}_rank']
+    )})
     return ht.annotate(**{
         f'{field}_bin': hl.int(ht[f'{field}_rank'] * bins / total_genes),
         f'{field}_bin_6': hl.int(ht[f'{field}_rank'] * 6 / total_genes)
@@ -81,11 +81,14 @@ def select_primitives_from_ht(ht):
 
 
 def generate_gene_lof_matrix(mt: hl.MatrixTable, tx_ht: hl.Table, by_transcript: bool = False,
-                             filter_an_adj: bool = False, common_var_filt: bool = False, pre_loftee: bool = False
+                             filter_an_adj: bool = False, common_var_filt: bool = False, pre_loftee: bool = False,
+                             remove_ultra_common: bool = False
                              ) -> hl.MatrixTable:
     filt_criteria = hl.len(mt.filters) == 0
     if filter_an_adj:
         filt_criteria &= get_an_adj_criteria(mt)
+    if remove_ultra_common:
+        filt_criteria &= mt.freq[0].AF < 0.95
     if common_var_filt:
         filt_criteria &= mt.freq[0].AF < 0.05
     mt = mt.filter_rows(filt_criteria)
@@ -287,6 +290,8 @@ def get_gene_lof_path(args):
         extension += '_an_adj'
     if args.no_loftee:
         extension += '_no_loftee'
+    if args.remove_ultra_common:
+        extension += '_remove_ultra_common'
     return gene_lof_matrix_path.format(extension)
 
 
@@ -300,6 +305,8 @@ def get_release_subdir(args):
         subdir.append('no_loftee')
     if args.pop_specific:
         subdir.append('pop_specific')
+    if args.remove_ultra_common:
+        subdir.append('remove_ultra_common')
     subdir = '.'.join(subdir)
     if subdir: subdir = f'other_cuts/{subdir}/'
     return subdir
@@ -318,7 +325,8 @@ def main(args):
     if args.calculate_gene_lof_matrix:
         mt = get_gnomad_data('exomes', adj=True, release_samples=True, release_annotations=True)
         mt = generate_gene_lof_matrix(mt, tx_ht, by_transcript=args.by_transcript,
-                                      filter_an_adj=args.filter_an_adj, pre_loftee=args.no_loftee)
+                                      filter_an_adj=args.filter_an_adj, pre_loftee=args.no_loftee,
+                                      remove_ultra_common=args.remove_ultra_common)
         mt.write(gene_lof_matrix, args.overwrite)
         send_message(args.slack_channel, 'Gene LoF matrix computed!')
 
@@ -378,11 +386,11 @@ def main(args):
         send_message(args.slack_channel, 'Homozygous LoFs computed!')
 
     lofs_by_gene_ht_path = lofs_by_gene_ht_path_raw.format(data_type='_genomes' if args.genomes else '')
-    if args.include_low_pext:
-        homozygous_lof_mt_path = homozygous_lof_mt_path.replace('.mt', '.low_pext.mt')
-        lofs_by_gene_ht_path = lofs_by_gene_ht_path.replace('.ht', '.low_pext.ht')
     if args.export_homozygous_lof:
         mt = hl.read_matrix_table(homozygous_lof_mt_path)
+        if args.include_low_pext:
+            homozygous_lof_mt_path = homozygous_lof_mt_path.replace('.mt', '.low_pext.mt')
+            lofs_by_gene_ht_path = lofs_by_gene_ht_path.replace('.ht', '.low_pext.ht')
         vep_ht = hl.read_table(annotations_ht_path(data_type, 'vep_csq'))
         if not args.include_low_pext: mt = mt.filter_rows(mt.tx_annotation.mean_expression > 0.1)
         mt = mt.annotate_rows(info=hl.struct(
@@ -469,6 +477,7 @@ if __name__ == '__main__':
     parser.add_argument('--by_transcript', help='Use all transcripts instead of worst', action='store_true')
     parser.add_argument('--filter_an_adj', help='Filter variants with less than 80% callrate', action='store_true')
     parser.add_argument('--no_loftee', help='Do not filter with LOFTEE (only for comparison)', action='store_true')
+    parser.add_argument('--remove_ultra_common', help='Remove ultra-common (AF > 95%) variants', action='store_true')
     parser.add_argument('--dont_collapse_indels', help='Do not collapse indels when exporting Gene LoF matrix', action='store_true')
     parser.add_argument('--pop_specific', help='Use pop-specific matrix instead', action='store_true')
     parser.add_argument('--include_low_pext', help='Include low pext variants in export', action='store_true')

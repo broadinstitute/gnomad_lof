@@ -180,6 +180,7 @@ t_test_gene_list = function(gene_data, specific_gene_list) {
   gene_lists %>%
     filter(gene_list == specific_gene_list) %>%
     right_join(gene_data) %>%
+    filter(!is.na(oe_lof_upper_bin)) %>%
     mutate(in_gene_list = !is.na(gene_list)) %T>%
     {count(., in_gene_list) %>% print} %>%
     summarize(ttest = list(t.test(oe_lof_upper ~ in_gene_list))) %>%
@@ -227,7 +228,7 @@ cell_ko_comparison = function(save_plot=F) {
   lists_to_plot = c('CEGv2' = color_lof,
                     'NEGv1' = color_benign)
   lists_labels = c('CEGv2' = 'Cell essential',
-                    'NEGv1' = 'Cell non-essential')
+                   'NEGv1' = 'Cell non-essential')
   ko_data = get_proportion_in_gene_lists(gene_data) %>%
     filter(gene_list %in% names(lists_to_plot))
   

@@ -572,6 +572,9 @@ rvis_comparisons = function(outcome_var='is_hi', add_pLI=F, add_exac_pLI=F, add_
   if (outcome_var == 'is_dd_gene') {
     rvis_compare_data = rvis_compare_data %>% filter(is_dd_gene | is_dd_control_gene)
   }
+  rvis_compare_data %>%
+    filter(!is.na(oe_lof_upper) & !is.na(`RVIS[pop_maf_0.05%(any)]`)) %>%
+    count(outcome)
   glm(outcome ~ 
         oe_lof_upper +
         pLI +

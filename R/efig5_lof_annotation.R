@@ -4,14 +4,15 @@ lof_frequency_spectrum = function(save_plot=F, cumulative=F) {
   if (cumulative) {
     p = gene_data %>%
       mutate(p_rank = percent_rank(p)) %>%
-      ggplot + aes(x = p, y = p_rank) + geom_line(lwd=1.5, color=color_lof) + theme_classic() + 
-      xlab('LoF frequency') + scale_x_log10() +
+      ggplot + aes(x = p, y = p_rank) + geom_line(lwd=1.5, color=color_lof) + 
+      scale_x_log10() +
       ylab('Percentile') + scale_y_continuous(labels=percent)
   } else {
     p = gene_data %>%
       ggplot + aes(x = p) + geom_density(fill = color_lof, color = color_lof) + 
-      theme_classic() + scale_x_log10() + xlab('LoF frequency') + ylab('Density')
+      scale_x_log10() + ylab('Density')
   }
+  p = p + theme_classic() + xlab('LoF frequency')
   
   sum(gene_data$p > 0.001, na.rm=T)
   sum(gene_data$p_afr > 0.001 | gene_data$p_amr > 0.001 | gene_data$p_eas > 0.001 | 
@@ -27,24 +28,28 @@ lof_frequency_spectrum = function(save_plot=F, cumulative=F) {
   return(p)
 }
 
-selection_coefficient = function(save_plot=F, cumulative=F) {
+selection_coefficient = function(save_plot=F, cumulative=F, histogram=F) {
   if (cumulative) {
     p = gene_data %>%
       mutate(s_rank = percent_rank(s)) %>%
-      ggplot + aes(x = s, y = s_rank) + geom_line(lwd=1.5, color=color_lof) + theme_classic() + 
-      xlab('Selection coefficient') + scale_x_log10() +
+      ggplot + aes(x = s, y = s_rank) + geom_line(lwd=1.5, color=color_lof) +
       ylab('Percentile') + scale_y_continuous(labels=percent)
+  } else if (histogram) {
+    p = gene_data %>%
+      ggplot + aes(x = s) + geom_histogram(fill = color_lof, color = color_lof) +
+      ylab('Number of genes')
   } else {
     p = gene_data %>%
       ggplot + aes(x = s) + 
       geom_density(fill = color_lof, color = color_lof) + 
-      scale_x_log10() + theme_classic() + 
-      xlab('Selection coefficient') + ylab('Density')
+      ylab('Density')
   }
+  p = p + xlab('Selection coefficient') + scale_x_log10() + theme_classic()
   
   if (save_plot) {
     pdf(paste0('e5_selection_coeff', 
                ifelse(cumulative, '_cumulative', ''),
+               ifelse(cumulative, '_histogram', ''),
                '.pdf'), height=3, width=4)
     print(p)
     dev.off()
@@ -358,6 +363,13 @@ variants_per_individual = function(data_type='exomes', save_plot=F) {
                                subfolder = 'summary_results/', version = 'v1.1')
   vpi_data = read_delim(gzfile(fname), delim='\t', col_types = cols(lof=col_character()))
   
+  vpi_data %>%
+    filter(bin != 'Not found') %>%
+    group_by(pop) %>%
+    summarize(total=sum(total), total_hom=sum(total_hom)) %>%
+    ungroup %>% left_join(samples) %>%
+    mutate(vpi=total / n - total_hom / n)
+    
   proc_vpi_data = vpi_data %>%
     filter(bin != 'Not found') %>%
     mutate(lof=if_else(worst_csq %in% c('frameshift_variant', 'stop_gained', 'splice_donor_variant', 'splice_acceptor_variant'),

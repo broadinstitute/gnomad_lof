@@ -1,3 +1,5 @@
+source('constants.R')
+library(gganimate)
 
 # Populations and percent ancestries
 all_data = bind_rows(
