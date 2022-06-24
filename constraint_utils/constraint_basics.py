@@ -191,6 +191,15 @@ def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str]
 
 def pre_process_data(ht: hl.Table, split_context_ht_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
+    """ Join the input hail table and context table, drop 'a_index', 'was_split', and 'colocated_variants' columns
+    in the context table. Keep vep of context table. Add 'pass_filter' column. It's a checkpoint.
+
+    Args:
+        ht (hl.Table): a gnomad genome or exome hail table
+        split_context_ht_path (str): path to context table
+        output_ht_path (str): output path of preprocessed table
+        overwrite (bool, optional): Overwrite output files. Defaults to False.
+    """
     context_ht = hl.read_table(split_context_ht_path).drop('a_index', 'was_split')
     context_ht = context_ht.annotate(vep=context_ht.vep.drop('colocated_variants'))
     ht.annotate(**context_ht[ht.key], pass_filters=hl.len(ht.filters) == 0).write(output_ht_path, overwrite)
