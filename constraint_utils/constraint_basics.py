@@ -191,8 +191,8 @@ def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str]
 
 def pre_process_data(ht: hl.Table, split_context_ht_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
-    """ Join the input hail table and context table, drop 'a_index', 'was_split', and 'colocated_variants' columns
-    in the context table. Keep vep of context table. Add 'pass_filter' column. It's a checkpoint.
+    """ Joins the input hail table and context table, drop 'a_index', 'was_split', and 'colocated_variants' columns
+    in the context table. Keeps vep of context table. Adds 'pass_filter' column. It's a checkpoint.
 
     Args:
         ht (hl.Table): a gnomad genome or exome hail table
@@ -206,6 +206,17 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
 
 
 def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
+    """Annotates the input table with cpg, transition, and variant_type, variant_type_model columns. Trims 
+    context column if necessary.
+
+    Args:
+        ht (_type_): Input table to be annotated
+        trimer (bool, optional): Whether to trim context column. Defaults to False.
+        annotate_coverage (bool, optional): Whether to annotate the coverage of exome. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
     if trimer:
         ht = trimer_from_heptamer(ht)
     str_len = 3 if trimer else 7

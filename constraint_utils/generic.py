@@ -160,6 +160,14 @@ def rebin_methylation(t: Union[hl.MatrixTable, hl.Table], bins: int=20) -> Union
 
 
 def trimer_from_heptamer(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.MatrixTable, hl.Table]:
+    """Timming the context column in input table to 3 bases.
+
+    Args:
+        t (Union[hl.MatrixTable, hl.Table]): Input table to be trimmed
+
+    Returns:
+        Union[hl.MatrixTable, hl.Table]: _description_
+    """
     trimer_expr = hl.cond(hl.len(t.context) == 7, t.context[2:5], t.context)
     return t.annotate_rows(context=trimer_expr) if isinstance(t, hl.MatrixTable) else t.annotate(context=trimer_expr)
 
