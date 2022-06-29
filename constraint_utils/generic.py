@@ -34,6 +34,14 @@ def flip_base(base: hl.expr.StringExpression) -> hl.expr.StringExpression:
 
 
 def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]:
+    """Flips the base in 'ref', 'alt', 'context' columns if either 'G' or 'T' exists in 'ref' column.
+
+    Args:
+        ht (Union[hl.Table, hl.MatrixTable]): Input table
+
+    Returns:
+        Union[hl.Table, hl.MatrixTable]: Table with bases that are flipped.
+    """
     collapse_expr = {
         'ref': hl.cond(((ht.ref == 'G') | (ht.ref == 'T')),
                        reverse_complement_bases(ht.ref), ht.ref),
