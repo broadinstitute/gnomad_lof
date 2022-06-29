@@ -375,6 +375,14 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
     def keep_criteria(ht):
+        """keep the variant below 0.1% allele frequency
+
+        Args:
+            ht (hl.Table): exome ht that only keep rows whoes key is also in context_ht
+
+        Returns:
+            BooleanExpression: a column that decides if the row should keep
+        """
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
         if impose_high_af_cutoff_upfront:
             crit &= (ht.freq[freq_index].AF <= af_cutoff)
@@ -430,6 +438,9 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
 
 
 def add_most_severe_csq_to_tc_within_ht(t):
+    """
+    Add most_severe_consequence annotation to transcript consequences in vep column.
+    """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences.map(
         add_most_severe_consequence_to_consequence))
     return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)

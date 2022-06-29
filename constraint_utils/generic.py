@@ -79,8 +79,22 @@ def count_variants(ht: hl.Table,
                    omit_methylation: bool = False, return_type_only: bool = False,
                    force_grouping: bool = False, singleton_expression: hl.expr.BooleanExpression = None,
                    impose_high_af_cutoff_here: bool = False) -> Union[hl.Table, Any]:
-    """
-    Count variants by context, ref, alt, methylation_level
+    """Count variants by context, ref, alt, methylation_level
+
+    Args:
+        ht (hl.Table): Input hail table
+        count_singletons (bool, optional): _description_. Defaults to False.
+        count_downsamplings (Optional[List[str]], optional): _description_. Defaults to ().
+        additional_grouping (Optional[List[str]], optional): _description_. Defaults to ().
+        partition_hint (int, optional): _description_. Defaults to 100.
+        omit_methylation (bool, optional): _description_. Defaults to False.
+        return_type_only (bool, optional): _description_. Defaults to False.
+        force_grouping (bool, optional): _description_. Defaults to False.
+        singleton_expression (hl.expr.BooleanExpression, optional): _description_. Defaults to None.
+        impose_high_af_cutoff_here (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        Union[hl.Table, Any]: _description_
     """
 
     grouping = hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt)
@@ -232,6 +246,19 @@ def combine_functions(func_list, x, operator='and'):
 
 def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True,
                     filter_empty: bool = True) -> Union[hl.Table, hl.MatrixTable]:
+    """Filter VEP column in table so that the table only contains non empty rows whoes most_severe_consequence column 
+    is synonymous variant and canoical is equal to 1.
+
+    Args:
+        t (Union[hl.Table, hl.MatrixTable]): Input table
+        vep_root (str, optional): Column name for VEP. Defaults to 'vep'.
+        syn (bool, optional): Whether to filter most_severe_consequence to only synonymous variant. Defaults to True.
+        canonical (bool, optional): Whether to filter canonical to only equal to 1. Defaults to True.
+        filter_empty (bool, optional): Whether to filter out rows whoes transcript_consequences are empty. Defaults to True.
+
+    Returns:
+        Union[hl.Table, hl.MatrixTable]: Table filtered as required
+    """
     transcript_csqs = t[vep_root].transcript_consequences
     criteria = [lambda csq: True]
     if syn: criteria.append(lambda csq: csq.most_severe_consequence == "synonymous_variant")
