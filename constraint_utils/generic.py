@@ -56,6 +56,18 @@ def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.M
 
 def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'global', variant_quality: str = 'adj',
                              singleton: bool = False, impose_high_af_cutoff: bool = False) -> hl.expr.ArrayExpression:
+    """Downsamping the variant count by given population
+
+    Args:
+        ht (Union[hl.Table, hl.MatrixTable]): Input table
+        pop (str, optional): Populaiton to . Defaults to 'global'.
+        variant_quality (str, optional): variant quality for "group" key. Defaults to 'adj'.
+        singleton (bool, optional): Whether to sum alleles that are singleton. Defaults to False.
+        impose_high_af_cutoff (bool, optional): Whether to sum alleles whoes frequency are high. Defaults to False.
+
+    Returns:
+        hl.expr.ArrayExpression: Downsampling count for request population
+    """
     indices = hl.zip_with_index(ht.freq_meta).filter(
         lambda f: (f[1].size() == 3) & (f[1].get('group') == variant_quality) &
                   (f[1].get('pop') == pop) & f[1].contains('downsampling')
@@ -79,22 +91,22 @@ def count_variants(ht: hl.Table,
                    omit_methylation: bool = False, return_type_only: bool = False,
                    force_grouping: bool = False, singleton_expression: hl.expr.BooleanExpression = None,
                    impose_high_af_cutoff_here: bool = False) -> Union[hl.Table, Any]:
-    """Count variants by context, ref, alt, methylation_level
+    """Count number of observed variants by context, ref, alt, methylation_level
 
     Args:
-        ht (hl.Table): Input hail table
-        count_singletons (bool, optional): _description_. Defaults to False.
-        count_downsamplings (Optional[List[str]], optional): _description_. Defaults to ().
-        additional_grouping (Optional[List[str]], optional): _description_. Defaults to ().
-        partition_hint (int, optional): _description_. Defaults to 100.
-        omit_methylation (bool, optional): _description_. Defaults to False.
-        return_type_only (bool, optional): _description_. Defaults to False.
-        force_grouping (bool, optional): _description_. Defaults to False.
-        singleton_expression (hl.expr.BooleanExpression, optional): _description_. Defaults to None.
-        impose_high_af_cutoff_here (bool, optional): _description_. Defaults to False.
+        ht (hl.Table): Input Hail table
+        count_singletons (bool, optional): Whether to count singletons. Defaults to False.
+        count_downsamplings (Optional[List[str]], optional): Whether to count variants for subpopulations. Defaults to ().
+        additional_grouping (Optional[List[str]], optional): additional feature to include when grouping. i.e. exome_coverage
+        partition_hint (int, optional): Number of partitions for aggregation. Defaults to 100.
+        omit_methylation (bool, optional): Whether to include 'methylation_level' when count variants. Defaults to False.
+        return_type_only (bool, optional): Whether to only return the data type of 'variant_count'. Defaults to False.
+        force_grouping (bool, optional): whether to force grouping. Defaults to False.
+        singleton_expression (hl.expr.BooleanExpression, optional): Criteria of allele count when aggregation. Defaults to None.
+        impose_high_af_cutoff_here (bool, optional): Whether to impose high allele frequency cutoff. Defaults to False.
 
     Returns:
-        Union[hl.Table, Any]: _description_
+        Union[hl.Table, Any]: Table including 'variant_count' and downsamping counts if necessary
     """
 
     grouping = hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt)

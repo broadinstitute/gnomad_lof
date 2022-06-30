@@ -247,6 +247,17 @@ def filter_to_autosomes_par(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Tab
 
 def annotate_with_mu(ht: hl.Table, mutation_ht: hl.Table, output_loc: str = 'mu_snp',
                      keys: Tuple[str] = ('context', 'ref', 'alt', 'methylation_level')) -> hl.Table:
+    """Annotates 'mu_snp' column for the input table
+
+    Args:
+        ht (hl.Table): Input table
+        mutation_ht (hl.Table): Mutation rate table
+        output_loc (str, optional): Name of the ouput column. Defaults to 'mu_snp'.
+        keys (Tuple[str], optional): Keys of output table. Defaults to ('context', 'ref', 'alt', 'methylation_level').
+
+    Returns:
+        hl.Table: Table with 'mu_snp'
+    """
     mu = hl.literal(mutation_ht.aggregate(hl.dict(hl.agg.collect(
         (hl.struct(**{k: mutation_ht[k] for k in keys}), mutation_ht.mu_snp)))))
     mu = mu.get(hl.struct(**{k: ht[k] for k in keys}))
@@ -359,6 +370,19 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
 def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table, mutation_ht: hl.Table,
                                         recompute_possible: bool = False, dataset: str = 'gnomad',
                                         impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
+    """Compute the proportion obsered by exome coverage 
+
+    Args:
+        exome_ht (hl.Table): Preprocessed exome table
+        context_ht (hl.Table): Preprocessed context table
+        mutation_ht (hl.Table): Preprocessed mutation rate table
+        recompute_possible (bool, optional): Whether to count variant and annonate mutation rate for context table. Defaults to False.
+        dataset (str, optional): Dataset to use when computing frequency index. Defaults to 'gnomad'.
+        impose_high_af_cutoff_upfront (bool, optional): Whether to keep only high frequency alleles. Defaults to True.
+
+    Returns:
+        hl.Table: Table with proportion observed
+    """
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -375,7 +399,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
     def keep_criteria(ht):
-        """keep the variant below 0.1% allele frequency
+        """keep the variant above 0.1% allele frequency
 
         Args:
             ht (hl.Table): exome ht that only keep rows whoes key is also in context_ht
