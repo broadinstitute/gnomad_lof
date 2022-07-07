@@ -191,14 +191,15 @@ def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str]
 
 def pre_process_data(ht: hl.Table, split_context_ht_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
-    """ Joins the input hail table and context table, drop 'a_index', 'was_split', and 'colocated_variants' columns
-    in the context table. Keeps 'vep' of context table. Adds 'pass_filter' column. It's a checkpoint.
+    """ 
+    Join gnomAD and VEP context Tables.
+    
+    Function drops `a_index`, `was_split`, and`colocated_variants` annotations from gnomAD data.
 
-    Args:
-        ht (hl.Table): a gnomad genome or exome hail table
-        split_context_ht_path (str): path to context table
-        output_ht_path (str): output path of preprocessed table
-        overwrite (bool, optional): Overwrite output files. Defaults to False.
+    :param ht: gnomAD exomes or genomes public Hail Table. 
+    :param split_context_ht_path: Path to VEP context Table.
+    :param output_ht_path: Path to output Table.
+    :param overwrite: Whether to overwrite existing data. Default is False.
     """
     context_ht = hl.read_table(split_context_ht_path).drop('a_index', 'was_split')
     context_ht = context_ht.annotate(vep=context_ht.vep.drop('colocated_variants'))
@@ -206,16 +207,25 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
 
 
 def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
-    """Annotates the input table with 'cpg', 'transition', and 'variant_type', 'variant_type_model' columns. Trims 
-    'context' column if necessary. Filters rows that have more than one base in 'ref' and 'alt' columns. 
+    """
+    Filters rows that have more than one base in 'ref' and 'alt' columns, removes rows with Ns, 
+    collapses strand, and annotates the input table. 
 
-    Args:
-        ht (hl.Table or hl.MatrixTable): Input table to be annotated
-        trimer (bool, optional): Whether to trim context column. Defaults to False.
-        annotate_coverage (bool, optional): Whether to annotate the coverage of exome. Defaults to True.
-
-    Returns:
-        hl.Table or hl.MatrixTable: Table with annotation
+    Function adds the following annotations:
+        - ref
+        - alt
+        - was_flipped
+        - methylation_level
+        - cpg
+        - transition
+        - variant_type
+        - variant_type_model
+        - exome_coverage
+   
+    :param ht: Input table to be annotated
+    :param trimer: Whether to use trimers or heptamers. Defaults to False.
+    :param annotate_coverage: Whether to annotate the coverage of exome. Defaults to True.
+    :return: Table with annotation
     """
     if trimer:
         ht = trimer_from_heptamer(ht)
