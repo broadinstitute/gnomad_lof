@@ -378,6 +378,17 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
 
 def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False, half_cutoff = False,
                  ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
+    """_summary_
+
+    Args:
+        coverage_ht (hl.Table): Inpute coverage table.
+        trimers (bool, optional): Whether the contexts were trimmed or not. Defaults to False.
+        weighted (bool, optional): Whether to add weight when calibrating high coverage model. Defaults to False.
+        half_cutoff (bool, optional): Whether to use half of high coverage cutoff as coverage cutoff. Defaults to False.
+
+    Returns:
+        Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]: Coverage model and plateau models
+    """
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
     cov_cutoff = (HIGH_COVERAGE_CUTOFF / half_cutoff) if half_cutoff else HIGH_COVERAGE_CUTOFF
