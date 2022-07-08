@@ -192,10 +192,17 @@ def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str]
 def pre_process_data(ht: hl.Table, split_context_ht_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
     """ 
-    Join gnomAD and VEP context Tables.
+    Add following annotations from VEP context Table onto gnomAD data:
+        - context
+        - methylation
+        - coverage
+        - gerp
+        - pass_filters
     
     Function drops `a_index`, `was_split`, and`colocated_variants` annotations from gnomAD data.
-
+    
+    Note: Function expects that multiallelic variants in the VEP context Table have been split.
+    
     :param ht: gnomAD exomes or genomes public Hail Table. 
     :param split_context_ht_path: Path to VEP context Table.
     :param output_ht_path: Path to output Table.
@@ -208,8 +215,10 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
 
 def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
     """
-    Filters rows that have more than one base in 'ref' and 'alt' columns, removes rows with Ns, 
-    collapses strand, and annotates the input table. 
+    Filter input Table and add annotations used in constraint calculations.
+ 
+    Function filters to SNPs, removes rows with undefined contexts, collapses strands
+    to deduplicate trimer or heptamer contexts, and annotates the input table.
 
     Function adds the following annotations:
         - ref
@@ -222,10 +231,10 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
         - variant_type_model
         - exome_coverage
    
-    :param ht: Input table to be annotated
+    :param ht: Input Table to be annotated.
     :param trimer: Whether to use trimers or heptamers. Defaults to False.
     :param annotate_coverage: Whether to annotate the coverage of exome. Defaults to True.
-    :return: Table with annotation
+    :return: Table with annotations.
     """
     if trimer:
         ht = trimer_from_heptamer(ht)

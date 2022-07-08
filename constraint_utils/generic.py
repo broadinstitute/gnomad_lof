@@ -35,12 +35,14 @@ def flip_base(base: hl.expr.StringExpression) -> hl.expr.StringExpression:
 
 def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]:
     """
-    Flips the base in 'ref', 'alt', 'context' columns if either 'G' or 'T' exists in 'ref' column.
+    Return the deduplicated context by collapsing DNA strands.
+    
+    Function returns the reverse complement if the reference allele is either 'G' or 'T'.
     
     The reverse_complement_bases function has been made obsolete and will be replaced by reverse_complement.
-
-    param: ht: Input table
-    return: Table with bases that are flipped.
+    
+    param: ht: Input Table.
+    return: Table with collapse expression.
     """
     collapse_expr = {
         'ref': hl.cond(((ht.ref == 'G') | (ht.ref == 'T')),
@@ -171,8 +173,8 @@ def trimer_from_heptamer(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.MatrixT
     """
     Trim heptamer context to create trimer context.
 
-    param: t: Input table to be trimmed
-    return: Table whoes context column is 3 bases
+    param: t: Input Table with context annotation.
+    return: Table with trimer context annotated.
     """
     trimer_expr = hl.cond(hl.len(t.context) == 7, t.context[2:5], t.context)
     return t.annotate_rows(context=trimer_expr) if isinstance(t, hl.MatrixTable) else t.annotate(context=trimer_expr)
