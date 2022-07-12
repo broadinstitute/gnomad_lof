@@ -62,7 +62,7 @@ def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'gl
     :parame pop: Population. Defaults to 'global'.
     :parame variant_quality: variant quality for "group" key. Defaults to 'adj'.
     :parame singleton: Whether to sum only alleles that are singleton. Defaults to False.
-    :parame impose_high_af_cutoff: Whether to sum alleles whoes frequency are high. Defaults to False.
+    :parame impose_high_af_cutoff: Whether to sum alleles whoes allele frequency is less than 0.001. Defaults to False.
 
     :return: Downsampling count for specified population.
     """
@@ -100,7 +100,7 @@ def count_variants(ht: hl.Table,
     :param return_type_only: Whether to only return the data type of 'variant_count'. Defaults to False.
     :param force_grouping: Whether to force grouping. Defaults to False.
     :param singleton_expression: Expression for defining a singleton. Defaults to None.
-    :param impose_high_af_cutoff_here: Whether to impose high allele frequency cutoff. Defaults to False.
+    :param impose_high_af_cutoff_here: Whether to filter to variants with an AF <= 0.001. Defaults to False.
 
     :return: Table including 'variant_count' and downsampling counts if necessary.
     """
@@ -255,8 +255,9 @@ def combine_functions(func_list, x, operator='and'):
 def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True,
                     filter_empty: bool = True) -> Union[hl.Table, hl.MatrixTable]:
     """
-    Filter VEP column in table so that the table only contains non empty rows whoes most_severe_consequence column 
-    is synonymous variant and canoical is equal to 1.
+    Filter VEP column in table so that the table only contains rows where 'transcript_consequences' is not empty.
+    The function also filter to rows where 'most_severe_consequence' is 'synonymous' and the transcript is the 
+    canonical transcript, if syn and canonical parameter are set to True.
 
     :param t: Input Table or MatrixTable.
     :param vep_root: Name used for VEP annotation. Defaults to 'vep'.

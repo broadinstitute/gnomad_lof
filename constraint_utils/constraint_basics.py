@@ -395,13 +395,13 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
     def keep_criteria(ht):
-        """keep the variant above 0.1% allele frequency
-
-        Args:
-            ht (hl.Table): exome ht that only keep rows whoes key is also in context_ht
-
-        Returns:
-            BooleanExpression: a column that decides if the row should keep
+        """
+        Generate expression to keep pass variants with an allele count greater than 0.
+        
+        If impose_high_af_cutoff_upfront is True, only keep variants with an AF less than the af_cutoff (default is 0.001).
+        
+        :param ht: Table of variants that have a defined key in the context ht
+        :return: BooleanExpression indicating if the row should be kept        
         """
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
         if impose_high_af_cutoff_upfront:
