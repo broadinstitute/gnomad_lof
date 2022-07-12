@@ -192,7 +192,9 @@ def split_context_mt(raw_context_ht_path: str, coverage_ht_paths: Dict[str, str]
 def pre_process_data(ht: hl.Table, split_context_ht_path: str,
                      output_ht_path: str, overwrite: bool = False) -> None:
     """ 
-    Add following annotations from VEP context Table onto gnomAD data:
+    Add annotations from VEP context Table to gnomAD data.
+    
+    Function adds the following annotations:
         - context
         - methylation
         - coverage
@@ -201,7 +203,8 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
     
     Function drops `a_index`, `was_split`, and`colocated_variants` annotations from gnomAD data.
     
-    Note: Function expects that multiallelic variants in the VEP context Table have been split.
+    .. note::
+        Function expects that multiallelic variants in the VEP context Table have been split.
     
     :param ht: gnomAD exomes or genomes public Hail Table. 
     :param split_context_ht_path: Path to VEP context Table.
@@ -218,7 +221,7 @@ def prepare_ht(ht, trimer: bool = False, annotate_coverage: bool = True):
     Filter input Table and add annotations used in constraint calculations.
  
     Function filters to SNPs, removes rows with undefined contexts, collapses strands
-    to deduplicate trimer or heptamer contexts, and annotates the input table.
+    to deduplicate trimer or heptamer contexts, and annotates the input Table.
 
     Function adds the following annotations:
         - ref
