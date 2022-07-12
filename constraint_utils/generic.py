@@ -56,17 +56,15 @@ def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.M
 
 def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'global', variant_quality: str = 'adj',
                              singleton: bool = False, impose_high_af_cutoff: bool = False) -> hl.expr.ArrayExpression:
-    """Downsamping the variant count by given population
+    """Downsample the variant count per given population
 
-    Args:
-        ht (Union[hl.Table, hl.MatrixTable]): Input table
-        pop (str, optional): Populaiton to . Defaults to 'global'.
-        variant_quality (str, optional): variant quality for "group" key. Defaults to 'adj'.
-        singleton (bool, optional): Whether to sum alleles that are singleton. Defaults to False.
-        impose_high_af_cutoff (bool, optional): Whether to sum alleles whoes frequency are high. Defaults to False.
+    :parame ht: Input Table.
+    :parame pop: Population. Defaults to 'global'.
+    :parame variant_quality: variant quality for "group" key. Defaults to 'adj'.
+    :parame singleton: Whether to sum only alleles that are singleton. Defaults to False.
+    :parame impose_high_af_cutoff: Whether to sum alleles whoes frequency are high. Defaults to False.
 
-    Returns:
-        hl.expr.ArrayExpression: Downsampling count for request population
+    :return: Downsampling count for specified population.
     """
     indices = hl.zip_with_index(ht.freq_meta).filter(
         lambda f: (f[1].size() == 3) & (f[1].get('group') == variant_quality) &
@@ -93,20 +91,18 @@ def count_variants(ht: hl.Table,
                    impose_high_af_cutoff_here: bool = False) -> Union[hl.Table, Any]:
     """Count number of observed variants by context, ref, alt, methylation_level
 
-    Args:
-        ht (hl.Table): Input Hail table
-        count_singletons (bool, optional): Whether to count singletons. Defaults to False.
-        count_downsamplings (Optional[List[str]], optional): Whether to count variants for subpopulations. Defaults to ().
-        additional_grouping (Optional[List[str]], optional): additional feature to include when grouping. i.e. exome_coverage
-        partition_hint (int, optional): Number of partitions for aggregation. Defaults to 100.
-        omit_methylation (bool, optional): Whether to include 'methylation_level' when count variants. Defaults to False.
-        return_type_only (bool, optional): Whether to only return the data type of 'variant_count'. Defaults to False.
-        force_grouping (bool, optional): whether to force grouping. Defaults to False.
-        singleton_expression (hl.expr.BooleanExpression, optional): Criteria of allele count when aggregation. Defaults to None.
-        impose_high_af_cutoff_here (bool, optional): Whether to impose high allele frequency cutoff. Defaults to False.
+    :param ht: Input Hail table.
+    :param count_singletons: Whether to count singletons. Defaults to False.
+    :param count_downsamplings: List of populations needed downsampling counts. Defaults to ().
+    :param additional_grouping: Additional features to group by. i.e. exome_coverage.
+    :param partition_hint: Number of partitions for aggregation. Defaults to 100.
+    :param omit_methylation: Whether to omit 'methylation_level' from the grouping when counting variants. Defaults to False.
+    :param return_type_only: Whether to only return the data type of 'variant_count'. Defaults to False.
+    :param force_grouping: Whether to force grouping. Defaults to False.
+    :param singleton_expression: Expression for defining a singleton. Defaults to None.
+    :param impose_high_af_cutoff_here: Whether to impose high allele frequency cutoff. Defaults to False.
 
-    Returns:
-        Union[hl.Table, Any]: Table including 'variant_count' and downsamping counts if necessary
+    :return: Table including 'variant_count' and downsampling counts if necessary.
     """
 
     grouping = hl.struct(context=ht.context, ref=ht.ref, alt=ht.alt)
@@ -258,18 +254,17 @@ def combine_functions(func_list, x, operator='and'):
 
 def fast_filter_vep(t: Union[hl.Table, hl.MatrixTable], vep_root: str = 'vep', syn: bool = True, canonical: bool = True,
                     filter_empty: bool = True) -> Union[hl.Table, hl.MatrixTable]:
-    """Filter VEP column in table so that the table only contains non empty rows whoes most_severe_consequence column 
+    """
+    Filter VEP column in table so that the table only contains non empty rows whoes most_severe_consequence column 
     is synonymous variant and canoical is equal to 1.
 
-    Args:
-        t (Union[hl.Table, hl.MatrixTable]): Input table
-        vep_root (str, optional): Column name for VEP. Defaults to 'vep'.
-        syn (bool, optional): Whether to filter most_severe_consequence to only synonymous variant. Defaults to True.
-        canonical (bool, optional): Whether to filter canonical to only equal to 1. Defaults to True.
-        filter_empty (bool, optional): Whether to filter out rows whoes transcript_consequences are empty. Defaults to True.
+    :param t: Input Table or MatrixTable.
+    :param vep_root: Name used for VEP annotation. Defaults to 'vep'.
+    :param syn: Whether to filter to variants where the most severe consequence is "synonymous". Defaults to True.
+    :param canonical: Whether to filter to only canonical transcripts. Defaults to True.
+    :param filter_empty: Whether to filter out rows where 'transcript_consequences' is empty. Defaults to True.
 
-    Returns:
-        Union[hl.Table, hl.MatrixTable]: Table filtered as required
+    :return: Table or MatrixTable filtered to specified criteria.
     """
     transcript_csqs = t[vep_root].transcript_consequences
     criteria = [lambda csq: True]
