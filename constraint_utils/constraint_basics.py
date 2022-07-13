@@ -209,7 +209,7 @@ def pre_process_data(ht: hl.Table, split_context_ht_path: str,
     :param ht: gnomAD exomes or genomes public Hail Table. 
     :param split_context_ht_path: Path to VEP context Table.
     :param output_ht_path: Path to output Table.
-    :param overwrite: Whether to overwrite existing data. Default is False.
+    :param overwrite: Whether to overwrite existing data. Defaults to False.
     """
     context_ht = hl.read_table(split_context_ht_path).drop('a_index', 'was_split')
     context_ht = context_ht.annotate(vep=context_ht.vep.drop('colocated_variants'))

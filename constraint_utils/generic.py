@@ -42,7 +42,7 @@ def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.M
     The reverse_complement_bases function has been made obsolete and should be replaced by `hl.reverse_complement`.
     
     :param ht: Input Table.
-    :return: Table with collapse expression.
+    :return: Table with deduplicated context annotation (ref, alt, context, was_flipped).
     """
     collapse_expr = {
         'ref': hl.cond(((ht.ref == 'G') | (ht.ref == 'T')),
