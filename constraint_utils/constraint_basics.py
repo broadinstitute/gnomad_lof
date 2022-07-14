@@ -378,16 +378,15 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
 
 def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False, half_cutoff = False,
                  ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
-    """_summary_
+    """
+    Build coverage model and plateau models.
 
-    Args:
-        coverage_ht (hl.Table): Inpute coverage table.
-        trimers (bool, optional): Whether the contexts were trimmed or not. Defaults to False.
-        weighted (bool, optional): Whether to add weight when calibrating high coverage model. Defaults to False.
-        half_cutoff (bool, optional): Whether to use half of high coverage cutoff as coverage cutoff. Defaults to False.
+    :param coverage_ht: Inpute coverage table.
+    :param trimers: Whether the contexts were trimmed or not. Defaults to False.
+    :param weighted: Whether to add weight when calibrating high coverage model. Defaults to False.
+    :param half_cutoff: Whether to use half of high coverage cutoff as coverage cutoff. Defaults to False.
 
-    Returns:
-        Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]: Coverage model and plateau models
+    :return: Coverage model and plateau models.
     """
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
@@ -696,14 +695,23 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
 # Model building
 def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
     """
-    Calibrates coverage model (returns intercept and slope)
+    Calibrates coverage model (returns intercept and slope).
+    
+    :param coverage_ht: Low coverage Table with observed variants for each population and possible variants.
+    
+    :return: Tuple with intercept and slope.
     """
     return tuple(coverage_ht.aggregate(hl.agg.linreg(coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage])).beta)
 
 
 def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope)
+    Calibrates high coverage model (returns intercept and slope).
+    
+    :param ht: Hight coverage Table with observed variants for each population and possible variants.
+    :param weighted: Whether to generalize the model to weighted least squares.
+    
+    :return: A Dictionary of intercepts and slopes for observed variants overall.
     """
     # TODO: try square weighting
     ht = ht.annotate(high_coverage_proportion_observed=ht.observed_variants / ht.possible_variants)
@@ -715,7 +723,12 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
 
 def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope)
+    Calibrates high coverage model (returns intercept and slope).
+    
+    :param ht: Hight coverage Table with observed variants for each population and possible variants.
+    :param weighted: Whether to generalize the model to weighted least squares.
+    
+    :return: A Dictionary of intercepts and slopes for populations plateau models.
     """
     pop_lengths = get_all_pop_lengths(ht)
     agg_expr = {
@@ -733,6 +746,16 @@ def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, 
 
 
 def get_all_pop_lengths(ht, prefix: str = 'observed_', pops: List[str] = POPS, skip_assertion: bool = False):
+    """
+    Get the minimum size of the arrays under observed variants column for each population.
+
+    :param ht: High coverage table.
+    :param prefix: Prefix of population variant count. Defaults to 'observed_'.
+    :param pops: List of populations. Defaults to POPS.
+    :param skip_assertion: Whether to skip assertion. Defaults to False.
+
+    :return: A Dictionary with the minimum length of the array for each population.
+    """
     ds_lengths = ht.aggregate([hl.agg.min(hl.len(ht[f'{prefix}{pop}'])) for pop in pops])
     # temp_ht = ht.take(1)[0]
     # ds_lengths = [len(temp_ht[f'{prefix}{pop}']) for pop in pops]
