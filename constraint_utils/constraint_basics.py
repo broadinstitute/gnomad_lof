@@ -247,14 +247,14 @@ def filter_to_autosomes_par(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Tab
 
 def annotate_with_mu(ht: hl.Table, mutation_ht: hl.Table, output_loc: str = 'mu_snp',
                      keys: Tuple[str] = ('context', 'ref', 'alt', 'methylation_level')) -> hl.Table:
-    """Annotates SNP mutation rate for the input Table
+    """Annotate SNP mutation rate for the input Table.
 
     :param ht: Input table
     :param mutation_ht: Mutation rate table
     :param output_loc: Name for mutational rate annotation. Defaults to 'mu_snp'.
     :param keys: Keys of output table. Defaults to ('context', 'ref', 'alt', 'methylation_level').
     
-    :return: Table with 'mu_snp'
+    :return: Table with mutational rate annotation added (default name for annotation is 'mu_snp').
     """
     mu = hl.literal(mutation_ht.aggregate(hl.dict(hl.agg.collect(
         (hl.struct(**{k: mutation_ht[k] for k in keys}), mutation_ht.mu_snp)))))
@@ -368,16 +368,16 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
 def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table, mutation_ht: hl.Table,
                                         recompute_possible: bool = False, dataset: str = 'gnomad',
                                         impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
-    """Count the observed variants and possible variants by exome coverage 
+    """Count the observed variants and possible variants by exome coverage. 
 
     :param exome_ht: Preprocessed exome Table
     :param context_ht: Preprocessed context Table
-    :param mutation_ht: Preprocessed mutation rate table
+    :param mutation_ht: Preprocessed mutation rate Table
     :param recompute_possible: Whether to count variant and annonate mutation rate for context table. Defaults to False.
     :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
-    :param impose_high_af_cutoff_upfront: Whether to keep only high frequency alleles. Defaults to True.
+    :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles. Defaults to True.
 
-    :return: hl.Table: Table with proportion observed
+    :return: hl.Table: Table with observed variant and possible variant count.
     """
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
@@ -459,9 +459,9 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
 
 def add_most_severe_csq_to_tc_within_ht(t):
     """
-    Add most_severe_consequence annotation to transcript consequences within the vep annotation.
+    Add most_severe_consequence annotation to 'transcript_consequences' within the vep annotation.
     
-    :param t: Input Table.
+    :param t: Input Table or MatrixTable.
     :return: Table with most_severe_consequence annotation.
     """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences.map(
