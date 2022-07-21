@@ -34,14 +34,6 @@ def flip_base(base: hl.expr.StringExpression) -> hl.expr.StringExpression:
 
 
 def collapse_strand(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]:
-    """Flips the base in 'ref', 'alt', 'context' columns if either 'G' or 'T' exists in 'ref' column.
-
-    Args:
-        ht (Union[hl.Table, hl.MatrixTable]): Input table
-
-    Returns:
-        Union[hl.Table, hl.MatrixTable]: Table with bases that are flipped.
-    """
     collapse_expr = {
         'ref': hl.cond(((ht.ref == 'G') | (ht.ref == 'T')),
                        reverse_complement_bases(ht.ref), ht.ref),
@@ -190,14 +182,6 @@ def rebin_methylation(t: Union[hl.MatrixTable, hl.Table], bins: int=20) -> Union
 
 
 def trimer_from_heptamer(t: Union[hl.MatrixTable, hl.Table]) -> Union[hl.MatrixTable, hl.Table]:
-    """Timming the context column in input table to 3 bases.
-
-    Args:
-        t (Union[hl.MatrixTable, hl.Table]): Input table to be trimmed
-
-    Returns:
-        Union[hl.MatrixTable, hl.Table]: _description_
-    """
     trimer_expr = hl.cond(hl.len(t.context) == 7, t.context[2:5], t.context)
     return t.annotate_rows(context=trimer_expr) if isinstance(t, hl.MatrixTable) else t.annotate(context=trimer_expr)
 
