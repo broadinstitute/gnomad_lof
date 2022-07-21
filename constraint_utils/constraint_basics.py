@@ -378,7 +378,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
         """
         Generate expression to keep PASS variants with an allele count greater than 0.
         
-        If `impose_high_af_cutoff_upfront` is True, only keep variants with an AF less than or equal to the 
+        If `impose_high_af_cutoff_upfront` is True, only keep variants with an AF less than or equal to 
         `af_cutoff` (default is 0.001).
         
         :param ht: Table or StructExpression of variants that have a defined key in the `context_ht`
