@@ -227,13 +227,13 @@ def filter_to_autosomes_par(ht: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Tab
 
 def annotate_with_mu(ht: hl.Table, mutation_ht: hl.Table, output_loc: str = 'mu_snp',
                      keys: Tuple[str] = ('context', 'ref', 'alt', 'methylation_level')) -> hl.Table:
-    """Annotate SNP mutation rate for the input Table.
+    """
+    Annotate SNP mutation rate for the input Table.
 
-    :param ht: Input table
-    :param mutation_ht: Mutation rate table
+    :param ht: Input Table
+    :param mutation_ht: Mutation rate Table
     :param output_loc: Name for mutational rate annotation. Defaults to 'mu_snp'.
-    :param keys: Keys of output table. Defaults to ('context', 'ref', 'alt', 'methylation_level').
-    
+    :param keys: Common keys between mutation rate Table and input Table. Defaults to ('context', 'ref', 'alt', 'methylation_level').
     :return: Table with mutational rate annotation added (default name for annotation is 'mu_snp').
     """
     mu = hl.literal(mutation_ht.aggregate(hl.dict(hl.agg.collect(
@@ -348,16 +348,16 @@ def calculate_mu_by_downsampling(genome_ht: hl.Table, raw_context_ht: hl.MatrixT
 def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table, mutation_ht: hl.Table,
                                         recompute_possible: bool = False, dataset: str = 'gnomad',
                                         impose_high_af_cutoff_upfront: bool = True) -> hl.Table:
-    """Count the observed variants and possible variants by exome coverage. 
+    """
+    Count the observed variants and possible variants by exome coverage. 
 
-    :param exome_ht: Preprocessed exome Table
-    :param context_ht: Preprocessed context Table
-    :param mutation_ht: Preprocessed mutation rate Table
-    :param recompute_possible: Whether to count variant and annonate mutation rate for context table. Defaults to False.
+    :param exome_ht: Preprocessed exome Table.
+    :param context_ht: Preprocessed context Table.
+    :param mutation_ht: Preprocessed mutation rate Table.
+    :param recompute_possible: Whether to count variant and annotate mutation rate for context Table. Defaults to False.
     :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
     :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles. Defaults to True.
-
-    :return: hl.Table: Table with observed variant and possible variant count.
+    :return: Table with observed variant and possible variant count.
     """
 
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
@@ -374,14 +374,15 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     exome_join = exome_ht[context_ht.key]
     freq_index = exome_ht.freq_index_dict.collect()[0][dataset]
 
-    def keep_criteria(ht):
+    def keep_criteria(ht: Union[hl.Table, hl.expr.StructExpression]) -> hl.expr.BooleanExpression:
         """
-        Generate expression to keep pass variants with an allele count greater than 0.
+        Generate expression to keep PASS variants with an allele count greater than 0.
         
-        If impose_high_af_cutoff_upfront is True, only keep variants with an AF less than the af_cutoff (default is 0.001).
+        If `impose_high_af_cutoff_upfront` is True, only keep variants with an AF less than or equal to the 
+        `af_cutoff` (default is 0.001).
         
-        :param ht: Table of variants that have a defined key in the context ht
-        :return: BooleanExpression indicating if the row should be kept        
+        :param ht: Table or StructExpression of variants that have a defined key in the `context_ht`
+        :return: BooleanExpression indicating if the row should be kept.
         """
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
         if impose_high_af_cutoff_upfront:
@@ -437,12 +438,12 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     return coverage_model, plateau_models
 
 
-def add_most_severe_csq_to_tc_within_ht(t):
+def add_most_severe_csq_to_tc_within_ht(t: Union[hl.Table, hl.MatrixTable]):
     """
     Add most_severe_consequence annotation to 'transcript_consequences' within the vep annotation.
     
     :param t: Input Table or MatrixTable.
-    :return: Table with most_severe_consequence annotation.
+    :return: Input Table or MatrixTable with most_severe_consequence annotation added.
     """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences.map(
         add_most_severe_consequence_to_consequence))
