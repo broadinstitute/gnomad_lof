@@ -461,20 +461,34 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
                             custom_model: str = None, dataset: str = 'gnomad',
                             impose_high_af_cutoff_upfront: bool = True, half_cutoff = False) -> hl.Table:
     """
-    Annotate ...; adjusted mutation rate; coverage correction; how model is used
+    Compute the expected number of variant using plateau models and coverage model.
 
-    :param exome_ht:  
-    :param context_ht: _description_
-    :param mutation_ht: _description_
-    :param plateau_models: _description_ 
-    :param coverage_model: _description_
-    :param recompute_possible: _description_, defaults to False
-    :param remove_from_denominator: _description_, defaults to True
-    :param custom_model: _description_, defaults to None
-    :param dataset: _description_, defaults to 'gnomad'
-    :param impose_high_af_cutoff_upfront: _description_, defaults to True
-    :param half_cutoff: _description_, defaults to False
-    :return: _description_
+    This function sums the number of possible variants times the mutation rate for all variants, and apply the calibration
+    model separately for CpG transitions and other sites. For sites with coverage lower than coverage cutoff, the value got 
+    from previous step is multiplied by the coverage correction factor. These values are summed across the set of variants 
+    of interest to obtain the expected number of variants.
+    
+    Function adds the following annotations:
+        - variant_count
+        - adjusted_mutation_rate (including those for each population) - mutation rate adjusted by plateau model
+        - possible_variants (including those for each population)
+        - expected_variants (including those for each population)
+        - mu - summation of the product of 'mu_snp', 'possible_variant', and 'coverage_correction'
+        - obs_exp - observed:expected ratio
+        - constraint annotations added by `annotate_constraint_groupings`
+
+    :param exome_ht: Exome site Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
+    :param context_ht: Context Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
+    :param mutation_ht: Mutation rate Table with 'mu_snp' field.
+    :param plateau_models: a linear model that clibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
+    :param coverage_model: a log10 model with observed:expected ratio for a given coverage level. It's a correction factor for low coverage sites.
+    :param recompute_possible: Whether to recompute possible variant counts, defaults to False.
+    :param remove_from_denominator: Whether to remove allels with high frequency in context Table from the denominater, defaults to True
+    :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
+    :param dataset: Dataset to use when computing frequency index, defaults to 'gnomad'.
+    :param impose_high_af_cutoff_upfront: Whether to remove alleles with frequency alleles larger than `af_cutoff` (0.001), defaults to True.
+    :param half_cutoff: Whether to use half of `HIGH_COVERAGE_CUTOFF` as coverage cutoff. Otherwise `HIGH_COVERAGE_CUTOFF` will be used, defaults to False.
+    :return: Table with expected variant count.
     """
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -685,9 +699,23 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool 
 def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
                                   custom_model: str = None) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
     """
-    HT must be exploded against whatever axis
+    Add constraint annotations 
+    
+    Function adds the following annotations:
+        - annotation - could be 'most_severe_consequence' of either 'worst_csq_by_gene' or 'transcript_consequences', or 'csq' of 'tx_annotation'
+        - modifier - classic lof annotation, LOFTEE annotation, or PolyPhen annotation
+        - gene
+        - coverage
+        - expressed (optional)
+        - transcript
+        - canonical
+    
+    ..note::
+        HT must be exploded against whatever axis.
 
-    Need to add `'coverage': ht.exome_coverage` here (which will get corrected out later)
+    :param ht: Input Table
+    :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None
+    :return: Input Table with annotations
     """
     if custom_model == 'worst_csq':
         groupings = {
