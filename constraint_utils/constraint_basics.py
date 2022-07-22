@@ -54,11 +54,33 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
 
 
 def load_tx_expression_data(context=True):
+    """
+    Load tx MatrixTable with processed expression data.
+
+    :param context: Whether the tx Table will be used by context Table. defaults to True.
+    :return: tx Table with expression data.
+    """
     tx_ht_file = 'gs://gnomad-public/papers/2019-tx-annotation/pre_computed/all.possible.snvs.tx_annotated.021819.ht' if context \
         else 'gs://gnomad-public/papers/2019-tx-annotation/gnomad.exomes.r2.1.1.sites.tx_annotated.021319.ht'
     tx_ht = hl.read_matrix_table(tx_ht_file).rows()
 
     def process_expression_data(csq_expression):
+        """
+        Process expression data by adding annotations and drop tissue columns other than Brain_Cortex.
+        
+        Function will add the following annotations to tx Table:
+            - ensg
+            - csq
+            - symbol
+            - lof
+            - mean_expression
+            - max_expression
+            - mean_brain_expression
+            - Brain_Cortex
+
+        :param csq_expression: 'tx_annotation' within tx Table
+        :return: Expression data
+        """
         exprs_to_drop = ['ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion']
         expression_data = csq_expression.drop(*exprs_to_drop)
         all_tissues = list(expression_data.values())
@@ -75,6 +97,12 @@ def load_tx_expression_data(context=True):
 
 
 def annotate_distance_to_splice(input_ht):
+    """
+    Annotate nearest distance to splice site.
+
+    :param input_ht: Input exome or context Table.
+    :return: Input Table with 'nearest_splice' annotation.
+    """
     # Load GTF file
     tmp_path = f'/tmp_{uuid.uuid4()}.ht'
     ht = hl.experimental.import_gtf('gs://hail-common/references/gencode/gencode.v19.annotation.gtf.bgz', 'GRCh37', True, min_partitions=100)
@@ -85,7 +113,7 @@ def annotate_distance_to_splice(input_ht):
     ht.transmute(**ht.loc).key_by('locus').collect_by_key().write(tmp_path, True)
 
     # Scan to get bounds, create intervals
-    tmp_path2 = f'/tmp_{uuid.uuid4()}.ht'
+    tmp_path2 = f'{root}/tmp_{uuid.uuid4()}.ht'
     ht = hl.read_table(tmp_path)
     last_locus = hl.scan.take(ht.row, 1, ordering=-ht.locus.global_position())
     ht.key_by(
@@ -416,6 +444,13 @@ def add_most_severe_csq_to_tc_within_ht(t):
 
 
 def take_one_annotation_from_tc_within_ht(t):
+    """
+    Annotate 'transcript_consequences' to be the first annotation of 'transcript_consequences' within the 
+    vep annotation of the input Table.
+
+    :param t: Input Table.
+    :return: Input Table with only one annotation for 'transcript_consequences'.
+    """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences[0])
     return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
 
@@ -425,7 +460,22 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
                             recompute_possible: bool = False, remove_from_denominator: bool = True,
                             custom_model: str = None, dataset: str = 'gnomad',
                             impose_high_af_cutoff_upfront: bool = True, half_cutoff = False) -> hl.Table:
+    """
+    Annotate ...; adjusted mutation rate; coverage correction; how model is used
 
+    :param exome_ht:  
+    :param context_ht: _description_
+    :param mutation_ht: _description_
+    :param plateau_models: _description_ 
+    :param coverage_model: _description_
+    :param recompute_possible: _description_, defaults to False
+    :param remove_from_denominator: _description_, defaults to True
+    :param custom_model: _description_, defaults to None
+    :param dataset: _description_, defaults to 'gnomad'
+    :param impose_high_af_cutoff_upfront: _description_, defaults to True
+    :param half_cutoff: _description_, defaults to False
+    :return: _description_
+    """
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
 
