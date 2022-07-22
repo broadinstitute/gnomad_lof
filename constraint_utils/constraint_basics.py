@@ -380,12 +380,25 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
                  ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
     """
     Build coverage model and plateau models.
+    
+    As input, `coverage_ht` is the output of `get_proportion_observed_by_coverage`
+    
+    .. note::
+        The following fields should be present in `coverage_ht`:
+            - context
+            - ref
+            - alt
+            - methylation_level
+            - exome_coverage
+            - variant_count
+            - downsampling_counts_{pop} (pop defaults to `POPS`)
+            - mu_snp
+            - possible_variants
 
-    :param coverage_ht: Inpute coverage table.
+    :param coverage_ht: Input coverage Table.
     :param trimers: Whether the contexts were trimmed or not. Defaults to False.
-    :param weighted: Whether to add weight when calibrating high coverage model. Defaults to False.
-    :param half_cutoff: Whether to use half of high coverage cutoff as coverage cutoff. Defaults to False.
-
+    :param weighted: Whether to weight the high coverage model (a linear regression model) by 'possible_variants'. Defaults to False.
+    :param half_cutoff: Whether to use half of `HIGH_COVERAGE_CUTOFF` as coverage cutoff. Otherwise `HIGH_COVERAGE_CUTOFF` will be used. Defaults to False.
     :return: Coverage model and plateau models.
     """
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
@@ -695,10 +708,14 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
 # Model building
 def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
     """
-    Calibrates coverage model (returns intercept and slope).
+    Calibrate coverage model (returns intercept and slope).
     
-    :param coverage_ht: Low coverage Table with observed variants for each population and possible variants.
+    .. note::
+        The following fields should be present in `coverage_ht`:
+            - low_coverage_obs_exp - an observed:expected ratio for a given coverage level 
+            - log_coverage - a correction factor for low coverage sites
     
+    :param coverage_ht: Low coverage Table.
     :return: Tuple with intercept and slope.
     """
     return tuple(coverage_ht.aggregate(hl.agg.linreg(coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage])).beta)
@@ -706,11 +723,19 @@ def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
 
 def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope).
+    Calibrate high coverage model (returns intercept and slope).
     
-    :param ht: Hight coverage Table with observed variants for each population and possible variants.
-    :param weighted: Whether to generalize the model to weighted least squares.
+    The function fits two models, one for CpG transitions and one for the remainder of sites.
     
+    .. note::
+        The following fields should be present in `ht`:
+            - observed_variants
+            - possible_variants
+            - cpg
+            - mu_snp
+    
+    :param ht: High coverage Table grouped by keys ('context', 'ref', 'alt', 'methylation_level', 'mu_snp').
+    :param weighted: Whether to generalize the model to weighted least squares using 'possible_variants'.
     :return: A Dictionary of intercepts and slopes for observed variants overall.
     """
     # TODO: try square weighting
@@ -723,11 +748,17 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
 
 def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope).
+    Calibrate high coverage model (returns intercept and slope).
     
-    :param ht: Hight coverage Table with observed variants for each population and possible variants.
-    :param weighted: Whether to generalize the model to weighted least squares.
+    .. note::
+        The following fields should be present in `ht`:
+            - observed_variants (of each pipulation)
+            - possible_variants
+            - cpg
+            - mu_snp
     
+    :param ht: High coverage Table grouped by keys ('context', 'ref', 'alt', 'methylation_level', 'mu_snp').
+    :param weighted: Whether to generalize the model to weighted least squares using 'possible_variants'.
     :return: A Dictionary of intercepts and slopes for populations plateau models.
     """
     pop_lengths = get_all_pop_lengths(ht)
@@ -747,14 +778,14 @@ def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, 
 
 def get_all_pop_lengths(ht, prefix: str = 'observed_', pops: List[str] = POPS, skip_assertion: bool = False):
     """
-    Get the minimum size of the arrays under observed variants column for each population.
+    Get the minimum array length for each annotation in `ht` that is defined by the combination of `prefix` 
+    and each population in `pops`.
 
-    :param ht: High coverage table.
+    :param ht: Input Table.
     :param prefix: Prefix of population variant count. Defaults to 'observed_'.
-    :param pops: List of populations. Defaults to POPS.
-    :param skip_assertion: Whether to skip assertion. Defaults to False.
-
-    :return: A Dictionary with the minimum length of the array for each population.
+    :param pops: List of populations. Defaults to `POPS`.
+    :param skip_assertion: Whether to raise AssertionError if all the arrays of variant counts within a population have the same length. Defaults to False.
+    :return: A Dictionary with the minimum array length for each population.
     """
     ds_lengths = ht.aggregate([hl.agg.min(hl.len(ht[f'{prefix}{pop}'])) for pop in pops])
     # temp_ht = ht.take(1)[0]
