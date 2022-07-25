@@ -113,7 +113,7 @@ def annotate_distance_to_splice(input_ht):
     ht.transmute(**ht.loc).key_by('locus').collect_by_key().write(tmp_path, True)
 
     # Scan to get bounds, create intervals
-    tmp_path2 = f'{root}/tmp_{uuid.uuid4()}.ht'
+    tmp_path2 = f'/tmp_{uuid.uuid4()}.ht'
     ht = hl.read_table(tmp_path)
     last_locus = hl.scan.take(ht.row, 1, ordering=-ht.locus.global_position())
     ht.key_by(
@@ -445,7 +445,7 @@ def add_most_severe_csq_to_tc_within_ht(t):
 
 def take_one_annotation_from_tc_within_ht(t):
     """
-    Annotate 'transcript_consequences' using the 'transcript_consequences' on 0 index within the 
+    Annotate 'transcript_consequences' using the 'transcript_consequences' on the 0 index within the 
     vep annotation of the input Table.
 
     :param t: Input Table.
