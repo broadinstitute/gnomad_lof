@@ -272,8 +272,8 @@ def annotate_with_mu(ht: hl.Table, mutation_ht: hl.Table, output_loc: str = 'mu_
     """
     Annotate SNP mutation rate for the input Table.
 
-    :param ht: Input Table
-    :param mutation_ht: Mutation rate Table
+    :param ht: Input Table.
+    :param mutation_ht: Mutation rate Table.
     :param output_loc: Name for mutational rate annotation. Defaults to 'mu_snp'.
     :param keys: Common keys between mutation rate Table and input Table. Defaults to ('context', 'ref', 'alt', 'methylation_level').
     :return: Table with mutational rate annotation added (default name for annotation is 'mu_snp').
@@ -396,7 +396,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
     :param exome_ht: Preprocessed exome Table.
     :param context_ht: Preprocessed context Table.
     :param mutation_ht: Preprocessed mutation rate Table.
-    :param recompute_possible: Whether to count variant and annotate mutation rate for context Table. Defaults to False.
+    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
     :param dataset: Dataset to use when computing frequency index. Defaults to 'gnomad'.
     :param impose_high_af_cutoff_upfront: Whether to remove high frequency alleles. Defaults to True.
     :return: Table with observed variant and possible variant count.
@@ -423,7 +423,7 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
         If `impose_high_af_cutoff_upfront` is True, only keep variants with an AF less than or equal to 
         `af_cutoff` (default is 0.001).
         
-        :param ht: Table or StructExpression of variants that have a defined key in the `context_ht`
+        :param ht: Table or StructExpression of variants that have a defined key in the `context_ht`.
         :return: BooleanExpression indicating if the row should be kept.
         """
         crit = (ht.freq[freq_index].AC > 0) & ht.pass_filters
@@ -480,7 +480,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     return coverage_model, plateau_models
 
 
-def add_most_severe_csq_to_tc_within_ht(t: Union[hl.Table, hl.MatrixTable]):
+def add_most_severe_csq_to_tc_within_ht(t: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]:
     """
     Add most_severe_consequence annotation to 'transcript_consequences' within the vep annotation.
     

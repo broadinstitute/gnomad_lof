@@ -97,7 +97,7 @@ def count_variants(ht: hl.Table,
     :param ht: Input Hail Table.
     :param count_singletons: Whether to count singletons. Defaults to False.
     :param count_downsamplings: List of populations to use for downsampling counts. Defaults to ().
-    :param additional_grouping: Additional features to group by. i.e. exome_coverage.
+    :param additional_grouping: Additional features to group by. i.e. exome_coverage. Defaults to ().
     :param partition_hint: Target number of partitions for aggregation. Defaults to 100.
     :param omit_methylation: Whether to omit 'methylation_level' from the grouping when counting variants. Defaults to False.
     :param return_type_only: Whether to only return the data type of 'variant_count'. Defaults to False.
