@@ -65,7 +65,7 @@ def downsampling_counts_expr(ht: Union[hl.Table, hl.MatrixTable], pop: str = 'gl
     :param pop: Population. Defaults to 'global'.
     :param variant_quality: Variant quality for "group" key. Defaults to 'adj'.
     :param singleton: Whether to sum only alleles that are singletons. Defaults to False.
-    :param impose_high_af_cutoff: Whether to sum only alleles with an allele frequency less than 0.001. Defaults to False.
+    :param impose_high_af_cutoff: Whether to sum only alleles with an allele frequency less than or equal to 0.001. Defaults to False.
     :return: Downsampling count for specified population.
     """
     indices = hl.zip_with_index(ht.freq_meta).filter(
