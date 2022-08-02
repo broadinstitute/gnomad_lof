@@ -581,6 +581,14 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
 
 def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 'canonical'),
                      n_partitions: int = 1000) -> hl.Table:
+    """
+    _summary_
+
+    :param po_ht: Table with the number of expected variants (output of `get_proportion_observed`).
+    :param keys: _description_, defaults to ('gene', 'transcript', 'canonical').
+    :param n_partitions: Desired number of partitions for `Table.repartition()`, defaults to 1000.
+    :return: _description_
+    """
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
     po_ht = po_ht.repartition(n_partitions).persist()
 
@@ -642,6 +650,23 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
 
 
 def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool = False) -> hl.Table:
+    """
+    _summary_
+
+    .. note::
+        The following annotations should be present in `lof_ht`:
+            - variant_count
+            - mu
+            - possible_variants
+            - expected_variants
+            
+    
+    
+    :param lof_ht: Table with specific LoF annotations.
+    :param keys: _description_
+    :param calculate_pop_pLI: _description_, defaults to False
+    :return: _description_
+    """
     agg_expr = {
         'obs_lof': hl.agg.sum(lof_ht.variant_count),
         'mu_lof': hl.agg.sum(lof_ht.mu),
