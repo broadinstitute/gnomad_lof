@@ -492,7 +492,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     :param mutation_ht: Mutation rate Table with 'mu_snp' field.
     :param plateau_models: a linear model that clibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
     :param coverage_model: a linear model that clibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
-    :param recompute_possible: Whether to recompute possible variant counts, defaults to False.
+    :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
     :param remove_from_denominator: Whether to remove allels with high frequency in context Table from the denominater, defaults to True
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
     :param dataset: Dataset to use when computing frequency index, defaults to 'gnomad'.

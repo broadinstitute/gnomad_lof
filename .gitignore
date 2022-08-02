@@ -106,3 +106,6 @@ ENV/
 
 # tokens
 slack_creds.py
+
+# else
+.vscode/
