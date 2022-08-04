@@ -899,7 +899,7 @@ def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.e
     :param obs: observed variant counts of LoF, missense, or synonymous variants.
     :param exp: expected variant counts of LoF, missense, or synonymous variants.
     :param prefix: Prefix of upper and lower bounds, defaults to 'oe'.
-    :param alpha: The lower bound of , defaults to 0.05.
+    :param alpha: the significance level used to compute the confidence level, defaults to 0.05.
     :param select_only_ci_metrics: Whether to return only upper and lower bounds, defaults to True.
     :return: Table with the bounds of confidence interval.
     """
