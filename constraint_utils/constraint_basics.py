@@ -399,19 +399,20 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     divides this metric at low coverage sites by this scaling factor to create an observed:expected ratio. Then the
     coverage model is built of log10(coverage) to this scaled ratio as a correction factor for low coverage sites.
     
-    As input, `coverage_ht` is the output of `get_proportion_observed_by_coverage`.
-    
     .. note::
-        The following annotations should be present in `coverage_ht`:
-            - context - a codon
-            - ref - the middle base on the reference
+        This function expects that the input `coverage_ht` is the output of `get_proportion_observed_by_coverage`, and
+        therefore the following fields should be present in `coverage_ht`:
+            - context - trinucleotide genomic context
+            - ref - the middle base of `context`
             - alt - the alternate base
-            - methylation_level
-            - exome_coverage
-            - variant_count - the number of observed variants
+            - methylation_level - methylation level
+            - exome_coverage - median exome coverage at integer values between 1-100
+            - variant_count - the number of observed variants in the dataset for each substitution (`alt`), `context`,
+            `methylation_level`, and median exome coverage (`exome_coverage`)
             - downsampling_counts_{pop} (pop defaults to `POPS`) - array of observed variant counts per population after downsampling
             - mu_snp - mutation rate
-            - possible_variants - the number of possible variants 
+            - possible_variants - the number of possible variants in the dataset for each substitution (`alt`), `context`,
+            `methylation_level`, and median exome coverage (`exome_coverage`)
 
     :param coverage_ht: Input coverage Table.
     :param trimers: Whether the contexts were trimmed or not. Defaults to False.
