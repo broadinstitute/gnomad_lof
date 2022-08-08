@@ -381,21 +381,28 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     """
     Build coverage model and plateau models.
     
-    This function first removes possible variants where there was no coverage, a low-quality variant was observed,
-    or a variant above 0.1% frequency was observed, and then calibrate from the mutation rate to proportion observed
-    to build plateau models for sites above `HIGH_COVERAGE_CUTOFF`. 
+    This function builds plateau models to calibrate mutation rate estimates against the proportion observed
+    ('variant_count'/'possible_variants') of each substitution, context, and methylation level in coverage_ht
+    considering only high coverage sites, or sites above a median coverage of `HIGH_COVERAGE_CUTOFF` (or half of
+    `HIGH_COVERAGE_CUTOFF` if half_cutoff is True). If using the output of `get_proportion_observed_by_coverage` as
+    `coverage_ht`, the proportion observed will be high-quality variants below 0.1% frequency at synonymous sites.
+    Two plateau models are fit, one for CpG transitions and one for the remainder of sites (transversions and 
+    non-CpG transitions). 
     
-    For sites below `HIGH_COVERAGE_CUTOFF`, this function performs a base-level resolution. It defines a metric
-    that is derived by dividing the number of observed synonymous variants with the total number of possible synonymous
-    variants times the mutation rate summed across all substitutions, contexts, and methylation level. The function computes
-    this metric for high coverage sites as a global scaling factor, and divide this metric at low coverage sites by this 
-    scaling factor to create an observed:expected ratio. The function finally builds a coverage model of log10(coverage) to
-    this scaled ratio as a correction factor for low coverage sites.
+    For low coverage sites, or sites below `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if half_cutoff is
+    True), this function performs a base-level resolution rather than exon-level to compute a coverage correction factor
+    to reduce the inaccuracy caused by low coverage on each base. The coverage models are built by first defining a metric
+    that is derived by dividing the number of observed variants with the total number of possible variants times the
+    mutation rate summed across all substitutions, contexts, and methylation level. (If using the output of 
+    `get_proportion_observed_by_coverage` as `coverage_ht`, the number of observed variants and possible variants will 
+    be at synonymous sites). The function computes this metric for high coverage sites as a global scaling factor, and
+    divides this metric at low coverage sites by this scaling factor to create an observed:expected ratio. Then the
+    coverage model is built of log10(coverage) to this scaled ratio as a correction factor for low coverage sites.
     
     As input, `coverage_ht` is the output of `get_proportion_observed_by_coverage`.
     
     .. note::
-        The following fields should be present in `coverage_ht`:
+        The following annotations should be present in `coverage_ht`:
             - context - a codon
             - ref - the middle base on the reference
             - alt - the alternate base
@@ -404,7 +411,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
             - variant_count - the number of observed variants
             - downsampling_counts_{pop} (pop defaults to `POPS`) - array of observed variant counts per population after downsampling
             - mu_snp - mutation rate
-            - possible_variants
+            - possible_variants - the number of possible variants 
 
     :param coverage_ht: Input coverage Table.
     :param trimers: Whether the contexts were trimmed or not. Defaults to False.
@@ -743,7 +750,7 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
     from the mutation rate to proportion observed.
     
     .. note::
-        The following fields should be present in `ht`:
+        The following annotations should be present in `ht`:
             - observed_variants - observed variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
             - possible_variants - possible variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
             - cpg - whether it's a cpg site or not
@@ -769,7 +776,7 @@ def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, 
     from the mutation rate to proportion observed in total and in each population.
     
     .. note::
-        The following fields should be present in `ht`:
+        The following annotations should be present in `ht`:
             - observed_variants - observed variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
             - observed_variants_{pop} (where pop is each population) - observed variant counts for each population
             - possible_variants - possible variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
