@@ -57,14 +57,15 @@ def load_tx_expression_data(context=True):
     """
     Load tx MatrixTable with processed expression data.
 
-    :param context: Whether the tx Table will be used by context Table. defaults to True.
+    :param context: Whether to load the Table with proportion expressed across transcripts (pext) score annotations
+    for all possible bases or the Table with pext scores for sites found in gnomAD v2.1.1 exomes. defaults to True.
     :return: tx Table with expression data.
     """
     tx_ht_file = 'gs://gnomad-public/papers/2019-tx-annotation/pre_computed/all.possible.snvs.tx_annotated.021819.ht' if context \
         else 'gs://gnomad-public/papers/2019-tx-annotation/gnomad.exomes.r2.1.1.sites.tx_annotated.021319.ht'
     tx_ht = hl.read_matrix_table(tx_ht_file).rows()
 
-    def process_expression_data(csq_expression):
+    def process_expression_data(csq_expression: hl.expr.StructExpression) -> hl.expr.StructExpression:
         """
         Process expression data by adding annotations and drop tissue columns other than Brain_Cortex.
         
@@ -78,7 +79,7 @@ def load_tx_expression_data(context=True):
             - mean_brain_expression
             - Brain_Cortex
 
-        :param csq_expression: 'tx_annotation' within tx Table
+        :param csq_expression: 'tx_annotation' (a StructExpression) within tx Table
         :return: Expression data
         """
         exprs_to_drop = ['ensg', 'csq', 'symbol', 'lof', 'lof_flag', 'mean_proportion']
@@ -96,12 +97,12 @@ def load_tx_expression_data(context=True):
     return tx_ht.annotate(tx_annotation=tx_ht.tx_annotation.map(process_expression_data))
 
 
-def annotate_distance_to_splice(input_ht):
+def annotate_distance_to_splice(input_ht: hl.Table) -> hl.Table:
     """
-    Annotate nearest distance to splice site.
+    Annotate distance to the nearest splice site.
 
     :param input_ht: Input exome or context Table.
-    :return: Input Table with 'nearest_splice' annotation.
+    :return: Table with 'nearest_splice' annotation added (distance to nearest splice site).
     """
     # Load GTF file
     tmp_path = f'/tmp_{uuid.uuid4()}.ht'
@@ -118,8 +119,8 @@ def annotate_distance_to_splice(input_ht):
     last_locus = hl.scan.take(ht.row, 1, ordering=-ht.locus.global_position())
     ht.key_by(
         interval=hl.or_missing((hl.len(last_locus) > 0) &
-                               (last_locus[0].contig == ht.locus.contig),
-                               hl.interval(last_locus[0], ht.locus))
+                               (last_locus[0].locus.contig == ht.locus.contig),
+                               hl.interval(last_locus[0].locus, ht.locus))
     ).write(tmp_path2)
 
     ht = hl.read_table(tmp_path2)
@@ -443,13 +444,15 @@ def add_most_severe_csq_to_tc_within_ht(t):
     return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
 
 
-def take_one_annotation_from_tc_within_ht(t):
+def take_one_annotation_from_tc_within_ht(t: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]: 
     """
-    Annotate 'transcript_consequences' using the 'transcript_consequences' on the 0 index within the 
+    Mutate 'transcript_consequences' annotation in vep.
+    
+    Annotate 'transcript_consequences' using only the first consequence (index 0) of 'transcript_consequences' within the
     vep annotation of the input Table.
 
-    :param t: Input Table.
-    :return: Input Table with only one annotation for 'transcript_consequences'.
+    :param t: Input Table or MatrixTable.
+    :return: Input Table or MatrixTable with only the first consequence for the 'transcript_consequences' annotation.
     """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences[0])
     return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
@@ -463,15 +466,15 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     """
     Compute the expected number of variants using plateau models and coverage model.
 
-    This function sums the number of possible variants times the mutation rate for all variants, and apply the calibration
-    model separately for CpG transitions and other sites. For sites with coverage lower than coverage cutoff, the value got 
-    from previous step is multiplied by the coverage correction factor. These values are summed across the set of variants 
+    This function sums the number of possible variants times the mutation rate for all variants, and applies the calibration
+    model separately for CpG transitions and other sites. For sites with coverage lower than the coverage cutoff, the value obtained 
+    from the previous step is multiplied by the coverage correction factor. These values are summed across the set of variants 
     of interest to obtain the expected number of variants.
     
     A brief view of how to get the expected number of variants:
     mu_agg = the number of possible variants * the mutation rate (all variants)
     adjusted_mutation_rate = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
-    if 0 <= coverage < coverage cutoff:
+    if 0 < coverage < coverage cutoff:
         coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
         expected_variants = sum(adjusted_mutation_rate * coverage_correction)
     else:
@@ -490,13 +493,13 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     :param exome_ht: Exome site Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param mutation_ht: Mutation rate Table with 'mu_snp' field.
-    :param plateau_models: a linear model that clibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
-    :param coverage_model: a linear model that clibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
+    :param plateau_models: A linear model (output of `build_plateau_models_pop`) that calibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
+    :param coverage_model: A linear model (output of `build_coverage_model`) that calibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
     :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
-    :param remove_from_denominator: Whether to remove allels with high frequency in context Table from the denominater, defaults to True
+    :param remove_from_denominator: Whether to remove alleles in context Table with coverage and allele count equal to 0, frequency larger than `af_cutoff`, and can't be found in `exome_ht`, defaults to True
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
     :param dataset: Dataset to use when computing frequency index, defaults to 'gnomad'.
-    :param impose_high_af_cutoff_upfront: Whether to remove alleles with frequency alleles larger than `af_cutoff` (0.001), defaults to True.
+    :param impose_high_af_cutoff_upfront: Whether to remove alleles with allele frequency larger than `af_cutoff` (0.001), defaults to True.
     :param half_cutoff: Whether to use half of `HIGH_COVERAGE_CUTOFF` as coverage cutoff. Otherwise `HIGH_COVERAGE_CUTOFF` will be used, defaults to False.
     :return: Table with the expected number of variants.
     """
@@ -716,16 +719,16 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
         - modifier - classic lof annotation, LOFTEE annotation, or PolyPhen annotation
         - gene
         - coverage
-        - expressed (optional)
-        - transcript
-        - canonical
+        - expressed (added when custom model specified as tx_annotation)
+        - transcript (added when custom model isn't specified as worst_csq or tx_annotation)
+        - canonical (added when custom model isn't specified as worst_csq or tx_annotation)
     
     ..note::
         HT must be exploded against whatever axis.
 
-    :param ht: Input Table
+    :param ht: Input Table or MatrixTable.
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
-    :return: A tuple of input Table with annotations and the names of columns annotated.
+    :return: A tuple of input Table or MatrixTable with annotations and the names of added annotations.
     """
     if custom_model == 'worst_csq':
         groupings = {
