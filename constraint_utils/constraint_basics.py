@@ -583,7 +583,7 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
                      n_partitions: int = 1000) -> hl.Table:
     """
     Compute the pLI scores, 90% confidence interval around the observed:expected ratio, and z scores 
-    for synomynous variants, missense variants, and LoF variants.
+    for synonymous variants, missense variants, and predicted loss-of-function (pLoF) variants.
     
     .. note::
         The following annotations should be present in `po_ht`:
@@ -596,10 +596,10 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
             - expected_variants_{pop} (pop defaults to `POPS`)
             - downsampling_counts_{pop} (pop defaults to `POPS`)
  
-    :param po_ht: Input table with the number of expected variants (output of `get_proportion_observed`).
-    :param keys: The keys of the output table, defaults to ('gene', 'transcript', 'canonical').
+    :param po_ht: Input Table with the number of expected variants (output of `get_proportion_observed`).
+    :param keys: The keys of the output Table, defaults to ('gene', 'transcript', 'canonical').
     :param n_partitions: Desired number of partitions for `Table.repartition()`, defaults to 1000.
-    :return: Table with pLI scores, confidence inteval of oe ratio, and z scores.
+    :return: Table with pLI scores, confidence interval of the observed:expected ratio, and z scores.
     """
     # This function aggregates over genes in all cases, as XG spans PAR and non-PAR X
     po_ht = po_ht.repartition(n_partitions).persist()
@@ -663,19 +663,20 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
 
 def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool = False) -> hl.Table:
     """
-    Computes the pLI scores using observed and expected varinat counts.
+    Collapse the `lof_ht` by keys and annotate pLI scores and observed:expected ratio for pLoF variants.
     
-    Function sums the number of observed variants, possible variants, and expected variants across all the `keys`,
-    and use the expected variant counts and obverved variant counts to compute the pLI scores.
+    Function sums the number of observed pLoF variants, possible pLoF variants, and expected pLoF variants
+    across all the combinations of `keys`, and uses the expected variant counts and observed variant counts
+    to compute the pLI scores and observed:expected ratio.
             
-    Function will add the following annotations to output Table:
-        - obs_lof - the sum of observed variants
-        - mu_lof - the sum of mutation rate
-        - possible_lof - possible number of LoF variants
-        - exp_lof - expected number of LoF variants
-        - exp_lof_{pop} (pop defaults to `POPS`) - expected number of LoF variants per population
-        - obs_lof_{pop} (pop defaults to `POPS`) - observed number of LoF variants per population
-        - oe_lof - lof observed:expected ratio
+    The following annotations are added to the output Table:
+        - obs_lof - the sum of observed pLoF variants
+        - mu_lof - the sum of mutation rate at pLoF variants
+        - possible_lof - possible number of pLoF variants
+        - exp_lof - expected number of pLoF variants
+        - exp_lof_{pop} (pop defaults to `POPS`) - expected number of pLoF variants per population
+        - obs_lof_{pop} (pop defaults to `POPS`) - observed number of pLoF variants per population
+        - oe_lof - observed:expected ratio for pLoF variants (oe_lof=lof_ht.obs_lof / lof_ht.exp_lof)
         - annotations added by function `pLI()`
 
     .. note::
@@ -685,10 +686,10 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool 
             - possible_variants
             - expected_variants
             
-    :param lof_ht: Table with specific LoF annotations.
-    :param keys: The keys of ouput Table.
+    :param lof_ht: Table with specific pLoF annotations.
+    :param keys: The keys to group the `lof_ht`and also the keys of the ouput Table.
     :param calculate_pop_pLI: Whether to calculate the pLI score for each population, defaults to False.
-    :return: A collapsed Table with pLI scores.
+    :return: A collapsed Table with pLI scores and observed:expected ratio for pLoF variants.
     """
     agg_expr = {
         'obs_lof': hl.agg.sum(lof_ht.variant_count),
@@ -849,17 +850,20 @@ def old_new_compare(source, axis_type='log'):
 
 def pLI(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression) -> hl.Table:
     """
-    Compute pLI score using the number of observed and expected variants.
+    Compute pLI score using the observed and expected variant counts.
     
     The output Table will include the following annotations:
-        - pLI
-        - pNull
-        - pRec
+        - pLI - Probability of loss-of-function intolerance; probability that transcript falls into 
+            distribution of haploinsufficient genes (~9% o/e pLoF ratio; computed from gnomAD data)
+        - pNull - Probability that transcript falls into distribution of unconstrained genes (~100% o/e
+            pLoF ratio; computed from gnomAD data)
+        - pRec - Probability that transcript falls into distribution of recessive genes (~46% o/e pLoF
+            ratio; computed from gnomAD data)
 
     :param ht: Input Table.
-    :param obs: The number of observed variants on each gene or transcript.
-    :param exp: The number of expected variants on each gene or transcript.
-    :return: StructExpression with pLI score.
+    :param obs: Expression for the number of observed variants on each gene or transcript in `ht`.
+    :param exp: Expression for the number of expected variants on each gene or transcript in `ht`.
+    :return: StructExpression for the pLI score.
     """
     last_pi = {'Null': 0, 'Rec': 0, 'LI': 0}
     pi = {'Null': 1 / 3, 'Rec': 1 / 3, 'LI': 1 / 3}
@@ -883,25 +887,25 @@ def pLI(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expressi
 def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression,
                            prefix: str = 'oe', alpha: float = 0.05, select_only_ci_metrics: bool = True) -> hl.Table:
     """
-    Indicate the bounds of confidence interval around the observed:expected ratio.
+    Determine the confidence interval around the observed:expected ratio.
     
-    For a given pair of observed and expected values, the function computes the density of the Poisson distribution
-    with fixed k (the observed number of variants) over a range of lambda values, which are given by the expected 
-    number of variants times a varying parameter ranging between 0 and 2. The cumulative density function of this 
-    function is computed and the value of the varying parameter is extracted at points corresponding to 5% and 95% 
-    to indicate the bounds of the confidence interval.
+    For a given pair of observed (`obs`) and expected (`exp`) values, the function computes the density of the Poisson distribution
+    (performed using Hail's `dpois` module) with fixed k (`x` in `dpois` is set to the observed number of variants) over a range of
+    lambda (`lamb` in `dpois`) values, which are given by the expected number of variants times a varying parameter ranging between
+    0 and 2. The cumulative density function of this function is computed and the value of the varying parameter is extracted at points
+    corresponding to `alpha` (defaults to 5%) and 1-`alpha`(defaults to 95%) to indicate the lower and upper bounds of the confidence interval.
     
     Function will have following annotations in the output Table in addition to keys:
-        - oe_lof_lower - the lower bound of confidence interval
-        - oe_lof_upper - the upper bound of confidence interval
+        - {prefix}_lower - the lower bound of confidence interval
+        - {prefix}_upper - the upper bound of confidence interval
 
-    :param ht: Input Table with the observed and expected variant counts for LoF, missense, and synonymous variants.
-    :param obs: observed variant counts of LoF, missense, or synonymous variants.
-    :param exp: expected variant counts of LoF, missense, or synonymous variants.
+    :param ht: Input Table with the observed and expected variant counts for pLoF, missense, and synonymous variants.
+    :param obs: Expression for the observed variant counts of pLoF, missense, or synonymous variants in `ht`.
+    :param exp: Expression for the expected variant counts of pLoF, missense, or synonymous variants in `ht`.
     :param prefix: Prefix of upper and lower bounds, defaults to 'oe'.
-    :param alpha: the significance level used to compute the confidence level, defaults to 0.05.
-    :param select_only_ci_metrics: Whether to return only upper and lower bounds, defaults to True.
-    :return: Table with the bounds of confidence interval.
+    :param alpha: The significance level used to compute the confidence interval, defaults to 0.05.
+    :param select_only_ci_metrics: Whether to return only upper and lower bounds instead of keeping all the annotations except `_exp`, defaults to True.
+    :return: Table with the confidence interval lower and upper bounds.
     """
     ht = ht.annotate(_obs=obs, _exp=exp)
     oe_ht = ht.annotate(_range=hl.range(0, 2000).map(lambda x: hl.float64(x) / 1000))
@@ -930,14 +934,14 @@ def calculate_z(input_ht: hl.Table, obs: hl.expr.NumericExpression, exp: hl.expr
     
     The raw z scores are positive when the transcript had fewer variants than expected, and are negative when transcripts had more variants than expected.
     
-    Function will have following annotations in the output Table in addition to keys:
+    The following annotations are included in the output Table in addition to the `input_ht` keys:
         - `output` - the raw z score
 
     :param input_ht: Input Table.
-    :param obs: Observed variant counts.
-    :param exp: Expected variant counts.
-    :param output: The column name for raw z score, defaults to 'z_raw'.
-    :return: A Table with raw z score.
+    :param obs: Observed variant count expression.
+    :param exp: Expected variant count expression.
+    :param output: The annotation label to use for the raw z score output, defaults to 'z_raw'.
+    :return: Table with raw z scores.
     """
     ht = input_ht.select(_obs=obs, _exp=exp)
     ht = ht.annotate(_chisq=(ht._obs - ht._exp) ** 2 / ht._exp)
@@ -946,20 +950,27 @@ def calculate_z(input_ht: hl.Table, obs: hl.expr.NumericExpression, exp: hl.expr
 
 def calculate_all_z_scores(ht: hl.Table) -> hl.Table:
     """
-    Calculate z scores for synomynous variants, missense variants, and LoF variants.
+    Calculate z scores for synomynous variants, missense variants, and pLoF variants.
     
     z score = {variant_type}_z_raw / {variant_type}_sd (variant_type could be syn, mis, or lof)
     
     Function will add the following annotations to output Table:
         - syn_sd (global) - standard deviation of synonymous variants raw z score
         - mis_sd (global) - standard deviation of missense varinats raw z score
-        - lof_sd (global) - standard deviation of LoF variants raw z score
-        - constraint_flag - flags to determine if the variant is 'no_variants', 'no_exp_syn', 'no_exp_mis', 'no_exp_lof', 'syn_outlier', 'mis_too_many', or 'lof_too_many'
+        - lof_sd (global) - standard deviation of pLoF variants raw z score
+        - constraint_flag - Reason gene does not have constraint metrics. One of:
+            no variants: Zero observed synonymous, missense, pLoF variants
+            no_exp_syn: Zero expected synonymous variants
+            no_exp_mis: Zero expected missense variants
+            no_exp_lof: Zero expected pLoF variants
+            syn_outlier: Too many or too few synonymous variants; synonymous z score < -5 or synonymous z score > 5
+            mis_too_many: Too many missense variants; missense z score < -5
+            lof_too_many: Too many pLoF variants; pLoF z score < -5
         - syn_z - z score of synonymous variants
-        - mis_z - z score of missense varinats
-        - lof_z - z score of LoF variants
+        - mis_z - z score of missense variants
+        - lof_z - z score of pLoF variants
 
-    :param ht: Input table with observed and expected variant counts for synomynous variants, missense variants, and LoF variants.
+    :param ht: Input Table with observed and expected variant counts for synomynous variants, missense variants, and pLoF variants.
     :return: Table with z scores.
     """
     ht = ht.annotate(**calculate_z(ht, ht.obs_syn, ht.exp_syn, 'syn_z_raw')[ht.key])
