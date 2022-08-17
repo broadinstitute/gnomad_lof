@@ -53,7 +53,7 @@ def load_all_possible_summary(filtered: bool = True) -> Dict[hl.Struct, int]:
         return pickle.load(f)
 
 
-def load_tx_expression_data(context=True):
+def load_tx_expression_data(context: bool =True) -> hl.Table:
     """
     Load tx MatrixTable with processed expression data.
 
@@ -462,7 +462,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
                             custom_model: str = None, dataset: str = 'gnomad',
                             impose_high_af_cutoff_upfront: bool = True, half_cutoff = False) -> hl.Table:
     """
-    Compute the expected number of variants using plateau models and coverage model.
+    Compute the expected number of variants and observed:expected ratio using plateau models and coverage model.
 
     This function sums the number of possible variants times the mutation rate for all variants, and applies the calibration
     model separately for CpG transitions and other sites. For sites with coverage lower than the coverage cutoff, the value obtained 
@@ -480,13 +480,13 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
         The expected_variants are summed across the set of variants of interest to obtain the final expected number of variants.
     
     Function adds the following annotations:
-        - variant_count - observed variant counts annotated by `count_variants` function
-        - adjusted_mutation_rate (including those for each population) - mutation rate adjusted by plateau models
-        - possible_variants (including those for each population) - possible variant counts derived from the context Table
-        - expected_variants (including those for each population) - expected variant counts
-        - mu - sum(mu_snp * possible_variant * coverage_correction)
+        - variant_count - observed variant counts annotated by `count_variants` function grouped by groupings (output of `annotate_constraint_groupings`)
+        - adjusted_mutation_rate (including those for each population) - the sum of mutation rate adjusted by plateau models and possible variant counts grouped by groupings
+        - possible_variants (including those for each population) - the sum of possible variant counts derived from the context Table grouped by groupings
+        - expected_variants (including those for each population) - the sum of expected variant counts grouped by groupings
+        - mu - sum(mu_snp * possible_variant * coverage_correction) grouped by groupings
         - obs_exp - observed:expected ratio
-        - constraint annotations annotated by `annotate_constraint_groupings`
+        - annotations annotated by `annotate_constraint_groupings`
 
     :param exome_ht: Exome site Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
@@ -494,7 +494,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     :param plateau_models: A linear model (output of `build_plateau_models_pop`) that calibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
     :param coverage_model: A linear model (output of `build_coverage_model`) that calibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
     :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
-    :param remove_from_denominator: Whether to remove alleles in context Table with coverage and allele count equal to 0, frequency larger than `af_cutoff`, and can't be found in `exome_ht`, defaults to True
+    :param remove_from_denominator: Whether to remove alleles in context Table if found in 'exome_ht' and is not a PASS variant with an allele count greater than 0, defaults to True
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
     :param dataset: Dataset to use when computing frequency index, defaults to 'gnomad'.
     :param impose_high_af_cutoff_upfront: Whether to remove alleles with allele frequency larger than `af_cutoff` (0.001), defaults to True.
@@ -710,7 +710,7 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool 
 def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
                                   custom_model: str = None) -> Tuple[Union[hl.Table, hl.MatrixTable], List[str]]:
     """
-    Add constraint annotations.
+    Add constraint annotations to be used for groupings.
     
     Function adds the following annotations:
         - annotation - could be 'most_severe_consequence' of either 'worst_csq_by_gene' or 'transcript_consequences', or 'csq' of 'tx_annotation'
