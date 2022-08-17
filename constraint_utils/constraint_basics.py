@@ -58,7 +58,7 @@ def load_tx_expression_data(context=True):
     Load tx MatrixTable with processed expression data.
 
     :param context: Whether to load the Table with proportion expressed across transcripts (pext) score annotations
-    for all possible bases or the Table with pext scores for sites found in gnomAD v2.1.1 exomes. defaults to True.
+    for all possible bases or the Table with pext scores for sites found in gnomAD v2.1.1 exomes, defaults to True.
     :return: tx Table with expression data.
     """
     tx_ht_file = 'gs://gnomad-public/papers/2019-tx-annotation/pre_computed/all.possible.snvs.tx_annotated.021819.ht' if context \
@@ -119,8 +119,8 @@ def annotate_distance_to_splice(input_ht: hl.Table) -> hl.Table:
     last_locus = hl.scan.take(ht.row, 1, ordering=-ht.locus.global_position())
     ht.key_by(
         interval=hl.or_missing((hl.len(last_locus) > 0) &
-                               (last_locus[0].locus.contig == ht.locus.contig),
-                               hl.interval(last_locus[0].locus, ht.locus))
+                               (last_locus[0].contig == ht.locus.contig),
+                               hl.interval(last_locus[0], ht.locus))
     ).write(tmp_path2)
 
     ht = hl.read_table(tmp_path2)
@@ -446,13 +446,11 @@ def add_most_severe_csq_to_tc_within_ht(t):
 
 def take_one_annotation_from_tc_within_ht(t: Union[hl.Table, hl.MatrixTable]) -> Union[hl.Table, hl.MatrixTable]: 
     """
-    Mutate 'transcript_consequences' annotation in vep.
-    
     Annotate 'transcript_consequences' using only the first consequence (index 0) of 'transcript_consequences' within the
     vep annotation of the input Table.
 
     :param t: Input Table or MatrixTable.
-    :return: Input Table or MatrixTable with only the first consequence for the 'transcript_consequences' annotation.
+    :return: Table or MatrixTable with only the first consequence for the 'transcript_consequences' annotation.
     """
     annotation = t.vep.annotate(transcript_consequences=t.vep.transcript_consequences[0])
     return t.annotate_rows(vep=annotation) if isinstance(t, hl.MatrixTable) else t.annotate(vep=annotation)
@@ -472,23 +470,23 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     of interest to obtain the expected number of variants.
     
     A brief view of how to get the expected number of variants:
-    mu_agg = the number of possible variants * the mutation rate (all variants)
-    adjusted_mutation_rate = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
-    if 0 < coverage < coverage cutoff:
-        coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
-        expected_variants = sum(adjusted_mutation_rate * coverage_correction)
-    else:
-        expected_variants = sum(adjusted_mutation_rate)
-    The expected_variants are summed across the set of variants of interest to obtain the final expected number of variants.
+        mu_agg = the number of possible variants * the mutation rate (all variants)
+        adjusted_mutation_rate = sum(plateau model slop * mu_agg + plateau model intercept) (separately for CpG transitions and other sites)
+        if 0 < coverage < coverage cutoff:
+            coverage_correction = coverage_model slope * log10(coverage) + coverage_model intercept
+            expected_variants = sum(adjusted_mutation_rate * coverage_correction)
+        else:
+            expected_variants = sum(adjusted_mutation_rate)
+        The expected_variants are summed across the set of variants of interest to obtain the final expected number of variants.
     
     Function adds the following annotations:
-        - variant_count - annotated by `count_variants` function
-        - adjusted_mutation_rate (including those for each population) - mutation rate adjusted by plateau model
-        - possible_variants (including those for each population)
-        - expected_variants (including those for each population)
+        - variant_count - observed variant counts annotated by `count_variants` function
+        - adjusted_mutation_rate (including those for each population) - mutation rate adjusted by plateau models
+        - possible_variants (including those for each population) - possible variant counts derived from the context Table
+        - expected_variants (including those for each population) - expected variant counts
         - mu - sum(mu_snp * possible_variant * coverage_correction)
         - obs_exp - observed:expected ratio
-        - constraint annotated by `annotate_constraint_groupings`
+        - constraint annotations annotated by `annotate_constraint_groupings`
 
     :param exome_ht: Exome site Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
@@ -501,7 +499,7 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     :param dataset: Dataset to use when computing frequency index, defaults to 'gnomad'.
     :param impose_high_af_cutoff_upfront: Whether to remove alleles with allele frequency larger than `af_cutoff` (0.001), defaults to True.
     :param half_cutoff: Whether to use half of `HIGH_COVERAGE_CUTOFF` as coverage cutoff. Otherwise `HIGH_COVERAGE_CUTOFF` will be used, defaults to False.
-    :return: Table with the expected number of variants.
+    :return: Table with `expected_variants` (expected variant counts) and `obs_exp` (observed:expected ratio) annotations.
     """
     exome_ht = add_most_severe_csq_to_tc_within_ht(exome_ht)
     context_ht = add_most_severe_csq_to_tc_within_ht(context_ht)
@@ -728,7 +726,7 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
 
     :param ht: Input Table or MatrixTable.
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
-    :return: A tuple of input Table or MatrixTable with annotations and the names of added annotations.
+    :return: A tuple of input Table or MatrixTable with grouping annotations added and the names of added annotations.
     """
     if custom_model == 'worst_csq':
         groupings = {
