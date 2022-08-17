@@ -382,22 +382,30 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     Build coverage model and plateau models.
     
     This function builds plateau models to calibrate mutation rate estimates against the proportion observed
-    ('variant_count'/'possible_variants') of each substitution, context, and methylation level in coverage_ht
-    considering only high coverage sites, or sites above a median coverage of `HIGH_COVERAGE_CUTOFF` (or half of
-    `HIGH_COVERAGE_CUTOFF` if half_cutoff is True). If using the output of `get_proportion_observed_by_coverage` as
-    `coverage_ht`, the proportion observed will be high-quality variants below 0.1% frequency at synonymous sites.
-    Two plateau models are fit, one for CpG transitions and one for the remainder of sites (transversions and 
-    non-CpG transitions). 
+    of each substitution, context, and methylation level in `coverage_ht` considering only high coverage sites,
+    or sites above a median coverage of `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if `half_cutoff`
+    is True). If using the output of `get_proportion_observed_by_coverage` as `coverage_ht`, the proportion observed
+    will be high-quality variants below 0.1% frequency at synonymous sites. Two plateau models are fit, one for CpG
+    transitions and one for the remainder of sites (transversions and non-CpG transitions). 
     
-    For low coverage sites, or sites below `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if half_cutoff is
+    The x and y of plateau models:
+        x: `mu_snp` - mutation rate
+        y: proportion observed ('variant_count' or 'observed_{pop}'/'possible_variants') 
+    
+    For low coverage sites, or sites below `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if `half_cutoff` is
     True), this function performs a base-level resolution rather than exon-level to compute a coverage correction factor
-    to reduce the inaccuracy caused by low coverage on each base. The coverage models are built by first defining a metric
-    that is derived by dividing the number of observed variants with the total number of possible variants times the
-    mutation rate summed across all substitutions, contexts, and methylation level. (If using the output of 
-    `get_proportion_observed_by_coverage` as `coverage_ht`, the number of observed variants and possible variants will 
-    be at synonymous sites). The function computes this metric for high coverage sites as a global scaling factor, and
-    divides this metric at low coverage sites by this scaling factor to create an observed:expected ratio. Then the
+    to reduce the inaccuracy of expected variant counts caused by low coverage on each base. The coverage models are built
+    by first defining a metric that is derived by dividing the number of observed variants with the total number of 
+    possible variants times the mutation rate summed across all substitutions, contexts, and methylation level. If using
+    the output of `get_proportion_observed_by_coverage` as `coverage_ht`, the number of observed variants and possible
+    variants will be at synonymous sites. The function computes this metric for high coverage sites as a global scaling
+    factor, and divides this metric at low coverage sites by this scaling factor to create an observed:expected ratio. Then the
     coverage model is built of log10(coverage) to this scaled ratio as a correction factor for low coverage sites.
+    
+    The x and y of the coverage model:
+        x: log10('exome_coverage') at low coverage site
+        y: sum('variant_count')/ (`high_coverage_scale_factor` * sum('possible_variants' * 'mu_snp') at low coverage site
+            high_coverage_scale_factor = sum('variant_count') /sum('possible_variants' * 'mu_snp') at high coverage site
     
     .. note::
         This function expects that the input `coverage_ht` is the output of `get_proportion_observed_by_coverage`, and
