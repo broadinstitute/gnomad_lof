@@ -663,19 +663,19 @@ def finalize_dataset(po_ht: hl.Table, keys: Tuple[str] = ('gene', 'transcript', 
 
 def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool = False) -> hl.Table:
     """
-    Collapse the `lof_ht` by keys and annotate pLI scores and observed:expected ratio for pLoF variants.
+    Collapse the `lof_ht` by `keys` and annotate pLI scores and observed:expected ratio for pLoF variants.
     
     Function sums the number of observed pLoF variants, possible pLoF variants, and expected pLoF variants
     across all the combinations of `keys`, and uses the expected variant counts and observed variant counts
     to compute the pLI scores and observed:expected ratio.
             
     The following annotations are added to the output Table:
-        - obs_lof - the sum of observed pLoF variants
-        - mu_lof - the sum of mutation rate at pLoF variants
-        - possible_lof - possible number of pLoF variants
-        - exp_lof - expected number of pLoF variants
-        - exp_lof_{pop} (pop defaults to `POPS`) - expected number of pLoF variants per population
-        - obs_lof_{pop} (pop defaults to `POPS`) - observed number of pLoF variants per population
+        - obs_lof - the sum of observed pLoF variants grouped by `keys`
+        - mu_lof - the sum of mutation rate at pLoF variants grouped by `keys`
+        - possible_lof - possible number of pLoF variants grouped by `keys`
+        - exp_lof - expected number of pLoF variants grouped by `keys`
+        - exp_lof_{pop} (pop defaults to `POPS`) - expected number of pLoF variants per population grouped by `keys`
+        - obs_lof_{pop} (pop defaults to `POPS`) - observed number of pLoF variants per population grouped by `keys`
         - oe_lof - observed:expected ratio for pLoF variants (oe_lof=lof_ht.obs_lof / lof_ht.exp_lof)
         - annotations added by function `pLI()`
 
@@ -687,7 +687,7 @@ def collapse_lof_ht(lof_ht: hl.Table, keys: Tuple[str], calculate_pop_pLI: bool 
             - expected_variants
             
     :param lof_ht: Table with specific pLoF annotations.
-    :param keys: The keys to group the `lof_ht`and also the keys of the ouput Table.
+    :param keys: The keys used to collapse `lof_ht` and use as keys for the output Table.
     :param calculate_pop_pLI: Whether to calculate the pLI score for each population, defaults to False.
     :return: A collapsed Table with pLI scores and observed:expected ratio for pLoF variants.
     """
@@ -850,15 +850,13 @@ def old_new_compare(source, axis_type='log'):
 
 def pLI(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.expr.Float32Expression) -> hl.Table:
     """
-    Compute pLI score using the observed and expected variant counts.
+    Compute the pLI score using the observed and expected variant counts.
     
     The output Table will include the following annotations:
         - pLI - Probability of loss-of-function intolerance; probability that transcript falls into 
-            distribution of haploinsufficient genes (~9% o/e pLoF ratio; computed from gnomAD data)
-        - pNull - Probability that transcript falls into distribution of unconstrained genes (~100% o/e
-            pLoF ratio; computed from gnomAD data)
-        - pRec - Probability that transcript falls into distribution of recessive genes (~46% o/e pLoF
-            ratio; computed from gnomAD data)
+            distribution of haploinsufficient genes
+        - pNull - Probability that transcript falls into distribution of unconstrained genes
+        - pRec - Probability that transcript falls into distribution of recessive genes
 
     :param ht: Input Table.
     :param obs: Expression for the number of observed variants on each gene or transcript in `ht`.
@@ -892,8 +890,9 @@ def oe_confidence_interval(ht: hl.Table, obs: hl.expr.Int32Expression, exp: hl.e
     For a given pair of observed (`obs`) and expected (`exp`) values, the function computes the density of the Poisson distribution
     (performed using Hail's `dpois` module) with fixed k (`x` in `dpois` is set to the observed number of variants) over a range of
     lambda (`lamb` in `dpois`) values, which are given by the expected number of variants times a varying parameter ranging between
-    0 and 2. The cumulative density function of this function is computed and the value of the varying parameter is extracted at points
-    corresponding to `alpha` (defaults to 5%) and 1-`alpha`(defaults to 95%) to indicate the lower and upper bounds of the confidence interval.
+    0 and 2. The cumulative density function of the Poisson distribution density is computed and the value of the varying parameter
+    is extracted at points corresponding to `alpha` (defaults to 5%) and 1-`alpha`(defaults to 95%) to indicate the lower and upper
+    bounds of the confidence interval.
     
     Function will have following annotations in the output Table in addition to keys:
         - {prefix}_lower - the lower bound of confidence interval
@@ -934,7 +933,7 @@ def calculate_z(input_ht: hl.Table, obs: hl.expr.NumericExpression, exp: hl.expr
     
     The raw z scores are positive when the transcript had fewer variants than expected, and are negative when transcripts had more variants than expected.
     
-    The following annotations are included in the output Table in addition to the `input_ht` keys:
+    The following annotation is included in the output Table in addition to the `input_ht` keys:
         - `output` - the raw z score
 
     :param input_ht: Input Table.
@@ -952,7 +951,7 @@ def calculate_all_z_scores(ht: hl.Table) -> hl.Table:
     """
     Calculate z scores for synomynous variants, missense variants, and pLoF variants.
     
-    z score = {variant_type}_z_raw / {variant_type}_sd (variant_type could be syn, mis, or lof)
+    z score = {variant_annotation}_z_raw / {variant_annotation}_sd (variant_annotation could be syn, mis, or lof)
     
     Function will add the following annotations to output Table:
         - syn_sd (global) - standard deviation of synonymous variants raw z score
