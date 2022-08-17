@@ -449,6 +449,56 @@ def get_proportion_observed_by_coverage(exome_ht: hl.Table, context_ht: hl.Table
 
 def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = False, half_cutoff = False,
                  ) -> Tuple[Tuple[float, float], Dict[str, Tuple[float, float]]]:
+    """
+    Build coverage model and plateau models.
+    
+    This function builds plateau models to calibrate mutation rate estimates against the proportion observed
+    of each substitution, context, and methylation level in `coverage_ht` considering only high coverage sites,
+    or sites above a median coverage of `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if `half_cutoff`
+    is True). If using the output of `get_proportion_observed_by_coverage` as `coverage_ht`, the proportion observed
+    will be high-quality variants below 0.1% frequency at synonymous sites. Two plateau models are fit, one for CpG
+    transitions and one for the remainder of sites (transversions and non-CpG transitions). 
+    
+    The x and y of plateau models:
+        x: `mu_snp` - mutation rate
+        y: proportion observed ('variant_count' or 'observed_{pop}' / 'possible_variants') 
+    
+    For low coverage sites, or sites below `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if `half_cutoff` is
+    True), this function performs a base-level resolution rather than exon-level to compute a coverage correction factor
+    to reduce the inaccuracy of expected variant counts caused by low coverage on each base. The coverage models are built
+    by first defining a metric that is derived by dividing the number of observed variants with the total number of 
+    possible variants times the mutation rate summed across all substitutions, contexts, and methylation level. If using
+    the output of `get_proportion_observed_by_coverage` as `coverage_ht`, the number of observed variants and possible
+    variants will be at synonymous sites. The function computes this metric for high coverage sites as a global scaling
+    factor, and divides this metric at low coverage sites by this scaling factor to create an observed:expected ratio. Then the
+    coverage model is built of log10(coverage) to this scaled ratio as a correction factor for low coverage sites.
+    
+    The x and y of the coverage model:
+        x: log10('exome_coverage') at low coverage site
+        y: sum('variant_count')/ (`high_coverage_scale_factor` * sum('possible_variants' * 'mu_snp') at low coverage site
+            where `high_coverage_scale_factor` = sum('variant_count') / sum('possible_variants' * 'mu_snp') at high coverage site
+    
+    .. note::
+        This function expects that the input `coverage_ht` is the output of `get_proportion_observed_by_coverage`, and
+        therefore the following fields should be present in `coverage_ht`:
+            - context - trinucleotide genomic context
+            - ref - the middle base of `context`
+            - alt - the alternate base
+            - methylation_level - methylation level
+            - exome_coverage - median exome coverage at integer values between 1-100
+            - variant_count - the number of observed variants in the dataset for each substitution (`alt`), `context`,
+            `methylation_level`, and median exome coverage (`exome_coverage`)
+            - downsampling_counts_{pop} (pop defaults to `POPS`) - array of observed variant counts per population after downsampling
+            - mu_snp - mutation rate
+            - possible_variants - the number of possible variants in the dataset for each substitution (`alt`), `context`,
+            `methylation_level`, and median exome coverage (`exome_coverage`)
+
+    :param coverage_ht: Input coverage Table.
+    :param trimers: Whether the contexts were trimmed or not. Defaults to False.
+    :param weighted: Whether to weight the high coverage model (a linear regression model) by 'possible_variants'. Defaults to False.
+    :param half_cutoff: Whether to use half of `HIGH_COVERAGE_CUTOFF` as coverage cutoff. Otherwise `HIGH_COVERAGE_CUTOFF` will be used. Defaults to False.
+    :return: Coverage model and plateau models.
+    """
     keys = ['context', 'ref', 'alt', 'methylation_level', 'mu_snp']
 
     cov_cutoff = (HIGH_COVERAGE_CUTOFF / half_cutoff) if half_cutoff else HIGH_COVERAGE_CUTOFF
@@ -762,14 +812,39 @@ def annotate_constraint_groupings(ht: Union[hl.Table, hl.MatrixTable],
 # Model building
 def build_coverage_model(coverage_ht: hl.Table) -> (float, float):
     """
-    Calibrates coverage model (returns intercept and slope)
+    Calibrate coverage model.
+    
+    This function uses linear regression to build a model of log10(coverage) to this scaled ratio as a correction
+    factor for low coverage sites.
+    
+    .. note::
+        The following annotations should be present in `coverage_ht`:
+            - low_coverage_obs_exp - an observed:expected ratio for a given coverage level 
+            - log_coverage - log10 coverage
+    
+    :param coverage_ht: Low coverage Table.
+    :return: Tuple with intercept and slope of the model.
     """
     return tuple(coverage_ht.aggregate(hl.agg.linreg(coverage_ht.low_coverage_obs_exp, [1, coverage_ht.log_coverage])).beta)
 
 
 def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope)
+    Calibrate high coverage model.
+    
+    The function fits two models, one for CpG transitions and one for the remainder of sites, to calibrate
+    from the mutation rate to proportion observed.
+    
+    .. note::
+        The following annotations should be present in `ht`:
+            - observed_variants - observed variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
+            - possible_variants - possible variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
+            - cpg - whether it's a cpg site or not
+            - mu_snp - mutation rate
+    
+    :param ht: High coverage Table.
+    :param weighted: Whether to generalize the model to weighted least squares using 'possible_variants'.
+    :return: A Dictionary of intercepts and slopes for observed variants overall.
     """
     # TODO: try square weighting
     ht = ht.annotate(high_coverage_proportion_observed=ht.observed_variants / ht.possible_variants)
@@ -781,7 +856,22 @@ def build_plateau_models(ht: hl.Table, weighted: bool = False) -> Dict[str, Tupl
 
 def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, Tuple[float, float]]:
     """
-    Calibrates high coverage model (returns intercept and slope)
+    Calibrate high coverage model (returns intercept and slope).
+    
+    The function fits two models, one for CpG transitions and one for the remainder of sites, to calibrate
+    from the mutation rate to proportion observed in total and in each population.
+    
+    .. note::
+        The following annotations should be present in `ht`:
+            - observed_variants - observed variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
+            - observed_variants_{pop} (where pop is each population) - observed variant counts for each population
+            - possible_variants - possible variant counts for each combination of 'context', 'ref', 'alt', 'methylation_level', 'mu_snp
+            - cpg - whether it's a cpg site or not
+            - mu_snp - mutation rate
+    
+    :param ht: High coverage Table.
+    :param weighted: Whether to generalize the model to weighted least squares using 'possible_variants'.
+    :return: A Dictionary of intercepts and slopes for the full plateau models.
     """
     pop_lengths = get_all_pop_lengths(ht)
     agg_expr = {
@@ -799,6 +889,17 @@ def build_plateau_models_pop(ht: hl.Table, weighted: bool = False) -> Dict[str, 
 
 
 def get_all_pop_lengths(ht, prefix: str = 'observed_', pops: List[str] = POPS, skip_assertion: bool = False):
+    """
+    Get the minimum array length for specific per population annotations in `ht`.
+    
+    The annotations are specified by the combination of `prefix` and each population in `pops`.
+
+    :param ht: Input Table.
+    :param prefix: Prefix of population variant count. Defaults to 'observed_'.
+    :param pops: List of populations. Defaults to `POPS`.
+    :param skip_assertion: Whether to skip raising an AssertionError if all the arrays of variant counts within a population don't have the same length. Defaults to False.
+    :return: A Dictionary with the minimum array length for each population.
+    """
     ds_lengths = ht.aggregate([hl.agg.min(hl.len(ht[f'{prefix}{pop}'])) for pop in pops])
     # temp_ht = ht.take(1)[0]
     # ds_lengths = [len(temp_ht[f'{prefix}{pop}']) for pop in pops]
