@@ -390,7 +390,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     
     The x and y of plateau models:
         x: `mu_snp` - mutation rate
-        y: proportion observed ('variant_count' or 'observed_{pop}'/'possible_variants') 
+        y: proportion observed ('variant_count' or 'observed_{pop}' / 'possible_variants') 
     
     For low coverage sites, or sites below `HIGH_COVERAGE_CUTOFF` (or half of `HIGH_COVERAGE_CUTOFF` if `half_cutoff` is
     True), this function performs a base-level resolution rather than exon-level to compute a coverage correction factor
@@ -405,7 +405,7 @@ def build_models(coverage_ht: hl.Table, trimers: bool = False, weighted: bool = 
     The x and y of the coverage model:
         x: log10('exome_coverage') at low coverage site
         y: sum('variant_count')/ (`high_coverage_scale_factor` * sum('possible_variants' * 'mu_snp') at low coverage site
-            high_coverage_scale_factor = sum('variant_count') /sum('possible_variants' * 'mu_snp') at high coverage site
+            where `high_coverage_scale_factor` = sum('variant_count') / sum('possible_variants' * 'mu_snp') at high coverage site
     
     .. note::
         This function expects that the input `coverage_ht` is the output of `get_proportion_observed_by_coverage`, and
