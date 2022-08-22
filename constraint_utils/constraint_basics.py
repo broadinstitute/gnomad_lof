@@ -1,5 +1,7 @@
 __author__ = 'konradk'
 
+from typing import Any, Tuple, Union, Optional, List
+
 from .generic import *
 import pickle
 import copy
@@ -491,8 +493,8 @@ def get_proportion_observed(exome_ht: hl.Table, context_ht: hl.Table, mutation_h
     :param exome_ht: Exome site Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param context_ht: Context Table (output of `prepare_ht`) filtered to autosomes and pseudoautosomal regions.
     :param mutation_ht: Mutation rate Table with 'mu_snp' field.
-    :param plateau_models: A linear model (output of `build_plateau_models_pop`) that calibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
-    :param coverage_model: A linear model (output of `build_coverage_model`) that calibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
+    :param plateau_models: Linear models (output of `build_plateau_models_pop` with intercepts and slops) that calibrates mutation rate to proportion observed for high coverage exome. It includes models for CpG site, non-CpG site, and each population in `POPS`.
+    :param coverage_model: A linear model (output of `build_coverage_model` with a intercept and a slop) that calibrates a given coverage level to observed:expected ratio. It's a correction factor for low coverage sites.
     :param recompute_possible: Whether to use context Table to recompute the number of possible variants instead of using a precomputed intermediate Table if it exists. Defaults to False.
     :param remove_from_denominator: Whether to remove alleles in context Table if found in 'exome_ht' and is not a PASS variant with an allele count greater than 0, defaults to True
     :param custom_model: The customized model (one of "standard" or "worst_csq" for now), defaults to None.
